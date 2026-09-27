@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"embed"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -21,9 +20,6 @@ import (
 	"zonenan-backend/internal/merchantauth"
 	"zonenan-backend/internal/store"
 )
-
-//go:embed static
-var staticFS embed.FS
 
 // Server 持有依赖并暴露 HTTP 路由。
 type Server struct {
@@ -306,6 +302,7 @@ func (s *Server) Router() http.Handler {
 			r.Use(s.adminV1Auth)
 			r.Get("/auth/me", s.handleAdminV1Me)
 			r.Post("/auth/logout", s.handleAdminV1Logout)
+			r.With(loginRL.middleware).Post("/auth/password", s.handleAdminPassword)
 			r.With(requireAdminPermission("audit.read")).Get("/audit-logs", s.handleAdminV1Audit)
 			r.With(requireAdminPermission("admin.read")).Get("/admins", s.handleAdminV1Admins)
 			r.With(requireAdminPermission("admin.read")).Get("/roles", s.handleAdminV1Roles)
@@ -414,93 +411,13 @@ func (s *Server) Router() http.Handler {
 		})
 	})
 
-	// 管理后台(ADMIN_SECRET 鉴权)。
-	r.Route("/admin", func(r chi.Router) {
-		r.Use(s.adminAuth)
-		r.Get("/users", s.handleAdminUsers)
-		r.Post("/users/ban", s.handleAdminBanUser)
-		r.Delete("/users", s.handleAdminDeleteUser)
-		r.Get("/grade/stats", s.handleAdminGradeStats)
-		r.Get("/analytics/summary", s.handleAdminAnalyticsSummary)
-		r.Get("/analytics/trends", s.handleAdminAnalyticsTrends)
-		r.Get("/analytics/exclusions", s.handleAdminAnalyticsExclusions)
-		r.Post("/analytics/exclusions", s.handleAdminAnalyticsExclusions)
-		r.Get("/crash-reports", s.handleAdminCrashReports)
-		r.Delete("/crash-reports", s.handleAdminDeleteCrashReports)
-		r.Get("/settings", s.handleAdminGetSettings)
-		r.Post("/settings", s.handleAdminSetSetting)
-		r.Get("/legal", s.handleAdminGetLegalDocs)
-		r.Post("/legal", s.handleAdminUpdateLegalDoc)    // 发布新版本
-		r.Post("/legal/edit", s.handleAdminEditLegalDoc) // 原地改当前版本
-		// 公告。
-		r.Get("/announcements", s.handleAdminAnnouncements)
-		r.Post("/announcements", s.handleAdminSaveAnnouncement)
-		r.Delete("/announcements", s.handleAdminDeleteAnnouncement)
-		// 广告位。
-		r.Get("/ads", s.handleAdminAds)
-		r.Post("/ads", s.handleAdminSaveAd)
-		r.Delete("/ads", s.handleAdminDeleteAd)
-		// 评教审核。
-		r.Get("/evaluations", s.handleAdminEvaluations)
-		r.Post("/evaluations/hide", s.handleAdminHideEvaluation)
-		// 用户角色/白名单。
-		r.Post("/users/role", s.handleAdminSetUserRole)
-		r.Get("/beta", s.handleAdminBeta)
-		r.Post("/beta", s.handleAdminSetBeta)
-		r.Delete("/beta", s.handleAdminDeleteBeta)
-		// 发布 beta 名单与发布记录。
-		r.Get("/release-beta", s.handleAdminReleaseBeta)
-		r.Post("/release-beta", s.handleAdminSetReleaseBeta)
-		r.Delete("/release-beta", s.handleAdminDeleteReleaseBeta)
-		r.Get("/releases", s.handleAdminReleases)
-		r.Post("/releases", s.handleAdminSaveRelease)
-		r.Post("/releases/whats-new", s.handleAdminSaveWhatsNew)
-		r.Post("/releases/backfill", s.handleAdminBackfillRelease)
-		r.Post("/releases/inspect-apk", s.handleAdminInspectAPK)
-		r.Post("/releases/archive", s.handleAdminArchiveRelease)
-		r.Post("/releases/restore", s.handleAdminRestoreRelease)
-		r.Delete("/releases", s.handleAdminDeleteRelease)
-		// 空教室离线数据包（R2 手工上传，后端只校验并发布 manifest）。
-		r.Get("/classroom-data", s.handleAdminClassroomData)
-		r.Post("/classroom-data", s.handleAdminSaveClassroomData)
-		r.Delete("/classroom-data", s.handleAdminArchiveClassroomData)
-		// 校园地图正式地点维护。
-		r.Get("/campus-map/places", s.handleAdminCampusMapPlaces)
-		r.Post("/campus-map/places", s.handleAdminSaveCampusMapPlace)
-		r.Delete("/campus-map/places", s.handleAdminDeactivateCampusMapPlace)
-		r.Get("/campus-map/contributions", s.handleAdminCampusMapContributions)
-		r.Post("/campus-map/contributions/review", s.handleAdminReviewCampusMapContribution)
-		r.Get("/campus-map/incidents", s.handleAdminCampusMapIncidents)
-		r.Post("/campus-map/incidents/remove", s.handleAdminRemoveCampusMapIncident)
-		r.Get("/campus-map/incidents/policy", s.handleAdminCampusMapIncidentPolicy)
-		r.Post("/campus-map/incidents/policy", s.handleAdminSetCampusMapIncidentPolicy)
-		// 风控。
-		r.Get("/risk/flags", s.handleAdminRiskFlags)
-		r.Post("/risk/resolve", s.handleAdminResolveRiskFlag)
-		r.Post("/risk/block-device", s.handleAdminBlockDevice)
-		// 会员与爱发电订单。
-		r.Get("/memberships/overview", s.handleAdminMembershipOverview)
-		r.Get("/memberships/types", s.handleAdminMembershipTypes)
-		r.Post("/memberships/types", s.handleAdminSaveMembershipType)
-		r.Get("/memberships/members", s.handleAdminMembershipMembers)
-		r.Get("/memberships/events", s.handleAdminMembershipEvents)
-		r.Get("/memberships/activation-codes", s.handleAdminMembershipActivationCodes)
-		r.Post("/memberships/activation-codes", s.handleAdminGenerateActivationCode)
-		r.Post("/memberships/activation-codes/disable", s.handleAdminDisableActivationCode)
-		r.Delete("/memberships/activation-codes", s.handleAdminDeleteActivationCode)
-		r.Post("/memberships/grants/expire", s.handleAdminMembershipGrantExpiry)
-		r.Post("/memberships/grants/revoke", s.handleAdminRevokeMembershipGrant)
-		r.Post("/memberships/grant", s.handleAdminMembershipGrant)
-		r.Post("/memberships/revoke", s.handleAdminMembershipRevoke)
-		r.Post("/memberships/afdian-sync", s.handleAdminAfdianSync)
+	// The secret-based legacy management surface is permanently retired.
+	retired := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		v1Error(w, r, http.StatusGone, "LEGACY_ADMIN_RETIRED", "旧管理入口已下线，请使用新管理后台")
 	})
-
-	// 管理面板静态页(无鉴权,密钥在页面内输入)。
-	r.Get("/panel", func(w http.ResponseWriter, _ *http.Request) {
-		data, _ := staticFS.ReadFile("static/admin.html")
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write(data)
-	})
+	for _, path := range []string{"/panel", "/panel/*", "/admin", "/admin/*"} {
+		r.Handle(path, retired)
+	}
 
 	return r
 }

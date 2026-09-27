@@ -52,8 +52,6 @@ func TestLegacyRouteSurfaceContainsCriticalClientContracts(t *testing.T) {
 		"GET /campus-map/places",
 		"POST /campus-map/contributions",
 		"GET /map/tiles/{layer}/{z}/{x}/{y}.png",
-		"GET /panel",
-		"GET /admin/users",
 	}
 	for _, contract := range want {
 		if !found[contract] {

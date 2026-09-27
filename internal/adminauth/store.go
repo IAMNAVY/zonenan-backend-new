@@ -17,6 +17,40 @@ import (
 )
 
 var ErrInvalidCredentials = errors.New("invalid admin credentials")
+var ErrInvalidPassword = errors.New("password must be 12 to 72 bytes and different from current password")
+
+// ChangePassword serializes concurrent changes and revokes every existing session.
+func (s *Store) ChangePassword(ctx context.Context, adminID int64, current, next string) error {
+	if len(next) < 12 || len(next) > 72 || next == current {
+		return ErrInvalidPassword
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	var hash string
+	if err = tx.QueryRow(ctx, `SELECT password_hash FROM admin_users WHERE id=$1 AND active=TRUE FOR UPDATE`, adminID).Scan(&hash); err != nil {
+		return err
+	}
+	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(current)) != nil {
+		return ErrInvalidCredentials
+	}
+	encoded, err := bcrypt.GenerateFromPassword([]byte(next), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `UPDATE admin_users SET password_hash=$1,updated_at=NOW() WHERE id=$2`, string(encoded), adminID); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `UPDATE admin_sessions SET revoked_at=NOW() WHERE admin_user_id=$1 AND revoked_at IS NULL`, adminID); err != nil {
+		return err
+	}
+	if _, err = tx.Exec(ctx, `INSERT INTO audit_logs(actor_type,actor_id,action,resource_type,resource_id,metadata) VALUES('admin',$1,'admin.password.change','admin_user',$2,'{}'::jsonb)`, adminID, fmt.Sprint(adminID)); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
 
 type Store struct{ pool *db.Pool }
 
