@@ -1,0 +1,974 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ZoneNaN 管理后台</title>
+<style>
+:root{
+  --bg:#0f1117; --surface:#181b24; --surface2:#1f2330; --border:#2a2f3d;
+  --text:#e6e8ee; --text2:#9aa0ae; --primary:#5b8cff; --primary-d:#4a76e0;
+  --danger:#ff5b6a; --ok:#3ecf8e; --warn:#ffb454; --radius:12px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,system-ui,"Segoe UI",sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.5}
+a{color:var(--primary)}
+/* 登录 */
+#loginBox{max-width:360px;margin:12vh auto;padding:32px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius)}
+#loginBox h1{font-size:22px;margin-bottom:6px}
+#loginBox p{color:var(--text2);margin-bottom:20px;font-size:13px}
+/* 布局 */
+#app{display:none;min-height:100vh;grid-template-columns:220px minmax(0,1fr)}
+#app.on{display:grid}
+aside{background:var(--surface);border-right:1px solid var(--border);padding:20px 12px;position:sticky;top:0;height:100vh;overflow-y:auto}
+aside .brand{font-size:18px;font-weight:700;padding:0 12px 20px;letter-spacing:.5px}
+aside nav a{display:block;padding:10px 12px;border-radius:8px;color:var(--text2);text-decoration:none;cursor:pointer;margin-bottom:2px;transition:.15s}
+aside nav a:hover{background:var(--surface2);color:var(--text)}
+aside nav a.active{background:var(--primary);color:#fff}
+aside .logout{margin-top:20px}
+main{padding:28px 32px;min-width:0;overflow-x:hidden}
+.users-scroll{max-width:100%;overflow-x:auto}
+.users-table{min-width:1100px}
+.users-table td:last-child{min-width:260px}
+.users-search{margin-bottom:14px}
+.users-search input{flex:1 1 220px;min-width:0;width:auto}
+.users-pagination{margin-top:16px}
+.users-pagination .muted{flex:1 1 200px}
+.users-jump input{width:80px;min-width:0}
+.crash-scroll{max-width:100%;overflow-x:auto}
+.crash-table{min-width:1050px}
+.crash-message{max-width:420px;white-space:pre-wrap;overflow-wrap:anywhere}
+.crash-stack{max-width:760px;max-height:320px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px;margin-top:8px;font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace}
+button:disabled{opacity:.45;cursor:not-allowed}
+.page{display:none}.page.on{display:block}
+h2.title{font-size:20px;margin-bottom:20px}
+/* 组件 */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-bottom:18px}
+.card h3{font-size:15px;margin-bottom:14px;color:var(--text)}
+.grid-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:14px}
+.stat{background:var(--surface2);border-radius:10px;padding:16px}
+.stat .n{font-size:26px;font-weight:700}
+.stat .l{color:var(--text2);font-size:12px;margin-top:4px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--border);vertical-align:top}
+th{color:var(--text2);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.4px}
+tr:hover td{background:var(--surface2)}
+input,textarea,select{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:9px 11px;width:100%;color:var(--text);font-size:13px;margin:5px 0;font-family:inherit}
+textarea{min-height:90px;resize:vertical}
+label{font-size:12px;color:var(--text2);display:block;margin-top:8px}
+button{background:var(--primary);color:#fff;border:none;border-radius:8px;padding:9px 16px;cursor:pointer;font-size:13px;font-weight:600;transition:.15s}
+button:hover{background:var(--primary-d)}
+button.ghost{background:transparent;border:1px solid var(--border);color:var(--text2)}
+button.ghost:hover{color:var(--text);border-color:var(--text2)}
+button.danger{background:var(--danger)}
+button.sm{padding:5px 10px;font-size:12px}
+.badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600}
+.badge.ok{background:rgba(62,207,142,.15);color:var(--ok)}
+.badge.danger{background:rgba(255,91,106,.15);color:var(--danger)}
+.badge.warn{background:rgba(255,180,84,.15);color:var(--warn)}
+.badge.info{background:rgba(91,140,255,.15);color:var(--primary)}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.row>*{margin:0}
+.col{flex:1;min-width:140px}
+.muted{color:var(--text2);font-size:12px}
+.toast{position:fixed;bottom:24px;right:24px;background:var(--surface2);border:1px solid var(--border);border-left:3px solid var(--primary);padding:12px 18px;border-radius:8px;opacity:0;transform:translateY(10px);transition:.25s;z-index:99}
+.toast.on{opacity:1;transform:translateY(0)}
+.toast.err{border-left-color:var(--danger)}
+.formgrid{display:grid;grid-template-columns:1fr 1fr;gap:0 16px}
+.analytics-head{display:flex;align-items:end;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.analytics-head select{width:auto;min-width:130px}
+.chart-wrap{position:relative;overflow-x:auto}
+.chart{display:block;width:100%;min-width:620px;height:270px}
+.chart .grid{stroke:var(--border);stroke-width:1}.chart .axis-label{fill:var(--text2);font-size:11px}
+.chart .series-pau{fill:none;stroke:#3987e5;stroke-width:2}.chart .series-app{fill:none;stroke:#8f6be8;stroke-width:2}.chart .series-widget{fill:none;stroke:#3ecf8e;stroke-width:2}.chart .series-sessions{fill:none;stroke:#d95926;stroke-width:2}
+.chart .hit{fill:transparent;cursor:crosshair}.chart .dot{stroke:var(--surface);stroke-width:2}
+.legend{display:flex;gap:18px;color:var(--text2);font-size:12px;margin-bottom:8px}.legend i{display:inline-block;width:14px;height:3px;border-radius:2px;margin-right:6px;vertical-align:middle}
+.chart-tip{position:absolute;pointer-events:none;background:var(--surface2);border:1px solid var(--border);padding:8px 10px;border-radius:7px;font-size:12px;box-shadow:0 8px 24px rgba(0,0,0,.25)}
+.bars{display:grid;gap:10px}.bar-row{display:grid;grid-template-columns:110px 1fr 72px;gap:10px;align-items:center}.bar-track{height:10px;background:var(--surface2);border-radius:5px;overflow:hidden}.bar-fill{height:100%;background:#3987e5;border-radius:5px;min-width:2px}
+details{margin-top:14px}summary{cursor:pointer;color:var(--text2);font-size:12px}.analytics-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+.map-picker{height:480px;position:relative;overflow:hidden;border:1px solid var(--border);border-radius:10px;background:#dfe8dc;cursor:crosshair;touch-action:none;user-select:none}
+.map-picker.dragging{cursor:grabbing}.map-picker img{position:absolute;width:256px;height:256px;max-width:none;pointer-events:none}
+.map-picker-marker{position:absolute;width:24px;height:24px;margin:-22px 0 0 -12px;border-radius:50% 50% 50% 0;background:#e94747;border:3px solid #fff;box-shadow:0 2px 7px rgba(0,0,0,.45);transform:rotate(-45deg);pointer-events:none;z-index:4}
+.map-picker-marker::after{content:'';position:absolute;width:6px;height:6px;left:6px;top:6px;border-radius:50%;background:#fff}
+.map-picker-note{position:absolute;left:10px;top:10px;z-index:5;background:rgba(15,17,23,.86);color:#fff;padding:6px 9px;border-radius:7px;font-size:12px;pointer-events:none}
+.map-picker-credit{position:absolute;right:5px;bottom:4px;z-index:5;background:rgba(255,255,255,.78);color:#333;padding:1px 5px;font-size:10px;pointer-events:none}
+.map-picker-zoom{position:absolute;right:10px;top:10px;z-index:6;display:grid;gap:5px}.map-picker-zoom button{width:36px;height:36px;padding:0;font-size:20px}
+@media(max-width:900px){.analytics-grid{grid-template-columns:1fr}}
+@media(max-width:600px){#app.on{grid-template-columns:minmax(0,1fr)}aside{position:static;height:auto}main{padding:20px 12px}#p-users .card{padding:14px}.formgrid{grid-template-columns:1fr}.map-picker{height:380px}}
+</style>
+</head>
+<body>
+
+<div id="loginBox">
+  <h1>ZoneNaN 管理后台</h1>
+  <p>输入管理密钥登录。建议在 Cloudflare Access 后再开放公网。</p>
+  <input id="secret" type="password" placeholder="ADMIN_SECRET" onkeydown="if(event.key==='Enter')login()">
+  <button style="width:100%;margin-top:10px" onclick="login()">登录</button>
+</div>
+
+<div id="app">
+  <aside>
+    <div class="brand">⬡ ZoneNaN</div>
+    <nav id="nav"></nav>
+    <div class="logout"><button class="ghost" style="width:100%" onclick="logout()">退出登录</button></div>
+  </aside>
+  <main>
+    <div class="page" id="p-dashboard"></div>
+    <div class="page" id="p-analytics"></div>
+    <div class="page" id="p-crashes"></div>
+    <div class="page" id="p-premium"></div>
+    <div class="page" id="p-users"></div>
+    <div class="page" id="p-announce"></div>
+    <div class="page" id="p-ads"></div>
+    <div class="page" id="p-evals"></div>
+    <div class="page" id="p-risk"></div>
+    <div class="page" id="p-settings"></div>
+    <div class="page" id="p-releases"></div>
+    <div class="page" id="p-classroom"></div>
+    <div class="page" id="p-campus-map"></div>
+    <div class="page" id="p-legal"></div>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const PAGES=[
+  ['dashboard','仪表盘'],['analytics','使用分析'],['crashes','崩溃上报'],['premium','Premium 会员'],['users','用户'],['announce','公告'],['ads','广告位'],
+  ['evals','评教审核'],['risk','风控'],['settings','应用配置'],['releases','发布记录'],['classroom','空教数据'],['campus-map','校园地图'],['legal','协议文档']
+];
+let SECRET=sessionStorage.getItem('zn_admin_secret')||'';
+
+// --- API ---
+async function api(method,path,body){
+  const opt={method,headers:{'Authorization':'Bearer '+SECRET}};
+  if(body!==undefined){opt.headers['Content-Type']='application/json';opt.body=JSON.stringify(body)}
+  const res=await fetch(path,opt);
+  const j=await res.json().catch(()=>({ok:false,message:'响应异常'}));
+  if(!res.ok||j.ok===false)throw new Error(j.message||('HTTP '+res.status));
+  return j.data;
+}
+function toast(msg,err){const t=document.getElementById('toast');t.textContent=msg;t.className='toast on'+(err?' err':'');setTimeout(()=>t.className='toast',2600)}
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function fmtTime(t){if(!t)return'-';return String(t).replace('T',' ').slice(0,16)}
+
+// --- auth ---
+async function login(){
+  SECRET=document.getElementById('secret').value.trim();
+  if(!SECRET)return toast('请输入密钥',1);
+  try{await api('GET','/admin/grade/stats');sessionStorage.setItem('zn_admin_secret',SECRET);enter()}
+  catch(e){toast('登录失败: '+e.message,1)}
+}
+function logout(){sessionStorage.removeItem('zn_admin_secret');location.reload()}
+function enter(){
+  document.getElementById('loginBox').style.display='none';
+  document.getElementById('app').classList.add('on');
+  const nav=document.getElementById('nav');
+  nav.innerHTML=PAGES.map(([id,name])=>`<a data-p="${id}" onclick="go('${id}')">${name}</a>`).join('');
+  go('dashboard');
+}
+function go(id){
+  document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('active',a.dataset.p===id));
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('on'));
+  document.getElementById('p-'+id).classList.add('on');
+  RENDER[id]();
+}
+
+// --- 各页渲染 ---
+const RENDER={};
+
+RENDER.dashboard=async()=>{
+  const el=document.getElementById('p-dashboard');
+  el.innerHTML='<h2 class="title">仪表盘</h2><div class="card"><div class="grid-stats" id="ds">加载中…</div></div>';
+  try{
+    const s=await api('GET','/admin/grade/stats');
+    document.getElementById('ds').innerHTML=[
+      ['课程档案',s.profiles],['成绩记录',s.scores],['关联数',s.links]
+    ].map(([l,n])=>`<div class="stat"><div class="n">${n??0}</div><div class="l">${l}</div></div>`).join('');
+  }catch(e){document.getElementById('ds').innerHTML='<span class="muted">'+esc(e.message)+'</span>'}
+};
+
+RENDER.analytics=async()=>{
+  const el=document.getElementById('p-analytics');
+  const days=+(document.getElementById('analyticsDays')?.value||30);
+  el.innerHTML=`<div class="analytics-head"><h2 class="title">使用分析</h2><label>时间范围<select id="analyticsDays" onchange="RENDER.analytics()"><option value="7">近 7 天</option><option value="30">近 30 天</option><option value="90">近 90 天</option></select></label></div><div class="card"><span class="muted">加载中…</span></div>`;
+  analyticsDays.value=String(days);
+  try{
+    const [s,trend,excluded]=await Promise.all([
+      api('GET','/admin/analytics/summary?days='+days),
+      api('GET','/admin/analytics/trends?days='+days),
+      api('GET','/admin/analytics/exclusions')
+    ]);
+    el.innerHTML=`<div class="analytics-head"><h2 class="title">使用分析</h2><label>时间范围<select id="analyticsDays" onchange="RENDER.analytics()"><option value="7">近 7 天</option><option value="30">近 30 天</option><option value="90">近 90 天</option></select></label></div>
+      <div class="card"><div class="grid-stats">
+        ${analyticsStat('今日 PAU',s.overview.pau??s.overview.dau)}${analyticsStat('今日 App DAU',s.overview.app_dau)}
+        ${analyticsStat('今日 Widget DAU',s.overview.widget_dau)}${analyticsStat('近 30 天 MAU',s.overview.mau)}
+        ${analyticsStat('App Sessions / App DAU',Number(s.overview.app_sessions_per_app_dau??s.overview.sessions_per_dau??0).toFixed(2),'所选范围 · 日均每活跃 App 用户会话数')}
+        ${analyticsStat('D1 留存',formatRate(s.retention.d1_rate),s.retention.d1_base+' 人 cohort')}
+        ${analyticsStat('D7 留存',formatRate(s.retention.d7_rate),s.retention.d7_base+' 人 cohort')}
+      </div><p class="muted" style="margin-top:12px">会话口径：所选范围内每日 App Sessions 之和 ÷ 每日 App DAU 之和。App 冷启动或后台超过 15 分钟后返回会创建新会话；仅统计非 Widget 事件，不代表打开次数。同一会话跨天活跃时，各天分别计入。</p></div>
+      <div class="card"><h3>每日活跃与 App 会话</h3><div class="legend"><span><i style="background:#3987e5"></i>PAU</span><span><i style="background:#8f6be8"></i>App DAU</span><span><i style="background:#3ecf8e"></i>Widget DAU</span><span><i style="background:#d95926"></i>App Sessions</span></div><div class="chart-wrap" id="trendChart"></div>
+        <details><summary>查看数据表</summary>${trendTable(trend)}</details></div>
+      <div class="analytics-grid"><div class="card"><h3>功能访问</h3><p class="muted" style="margin-bottom:10px">PV = 打开总次数；UV = 去重用户（未登录时按匿名安装去重）</p>${featureBars(s.features)}</div>
+      <div class="card"><h3>页面点击 / 查看</h3><p class="muted" style="margin-bottom:10px">PV = 点击或查看总次数；UV = 去重用户/安装数</p>${breakdownTable(s.screens,'页面 · 事件','PV','UV')}</div>
+      <div class="card"><h3>功能结果</h3><p class="muted" style="margin-bottom:10px">success / empty / cancelled / error</p>${breakdownTable(s.feature_results,'功能:结果','次数','用户')}</div>
+      <div class="card"><h3>页面停留</h3>${durationTable(s.screen_durations)}</div>
+      <div class="card"><h3>平台</h3>${breakdownTable(s.platforms,'平台','事件','用户')}</div>
+      <div class="card"><h3>版本</h3>${breakdownTable(s.versions,'版本','事件','用户')}</div>
+      <div class="card"><h3>小组件统计</h3><p class="muted" style="margin-bottom:10px">按事件、类型、尺寸、刷新方式和动作统计 PV / UV</p>${widgetTable(s.widgets||[])}</div>
+      <div class="card"><h3>统计排除</h3><p class="muted">内部测试账号被全局排除；历史事件无需删除。</p>
+        <div class="row" style="margin-top:12px"><input id="excludeUid" type="number" min="1" placeholder="用户 ID" style="max-width:180px"><button onclick="setAnalyticsExcluded(true)">排除</button><button class="ghost" onclick="setAnalyticsExcluded(false)">恢复计入</button></div>
+        <div class="muted" style="margin-top:12px">当前排除：${excluded.length?excluded.map(x=>'#'+x).join('、'):'无'}</div></div></div>`;
+    analyticsDays.value=String(days);
+    renderTrendChart(document.getElementById('trendChart'),trend);
+  }catch(e){el.innerHTML='<h2 class="title">使用分析</h2><div class="card"><span class="muted">'+esc(e.message)+'</span></div>'}
+};
+function analyticsStat(label,value,note=''){return `<div class="stat"><div class="n">${esc(value)}</div><div class="l">${esc(label)}</div>${note?`<div class="muted">${esc(note)}</div>`:''}</div>`}
+function formatRate(v){return Number(v||0).toFixed(1)+'%'}
+function analyticsName(value){const labels={campus_map:'校园地图',academic_calendar:'校历',classroom:'空教室',screen_click:'点击',screen_view:'查看',success:'成功',empty:'空结果',cancelled:'取消',error:'失败'};const parts=String(value??'').split(':');return parts.map(x=>labels[x]||x).join(' · ')}
+function breakdownTable(rows,c1,c2,c3){return `<div style="overflow-x:auto"><table><thead><tr><th>${c1}</th><th>${c2}</th><th>${c3}</th></tr></thead><tbody>${(rows||[]).map(x=>`<tr><td>${esc(analyticsName(x.name))}</td><td>${x.events??0}</td><td>${x.users??0}</td></tr>`).join('')||'<tr><td colspan="3" class="muted">暂无数据</td></tr>'}</tbody></table></div>`}
+function durationTable(rows){return `<div style="overflow-x:auto"><table><thead><tr><th>页面</th><th>离开次数</th><th>用户</th><th>平均停留</th></tr></thead><tbody>${(rows||[]).map(x=>`<tr><td>${esc(analyticsName(x.name))}</td><td>${x.views??0}</td><td>${x.users??0}</td><td>${Number(x.avg_seconds||0).toFixed(1)} 秒</td></tr>`).join('')||'<tr><td colspan="4" class="muted">暂无数据</td></tr>'}</tbody></table></div>`}
+function featureBars(rows){if(!rows?.length)return '<span class="muted">暂无数据</span>';const max=Math.max(...rows.map(x=>x.events),1);return `<div class="bars">${rows.map(x=>`<div class="bar-row" title="${esc(analyticsName(x.name))}：PV ${x.events}，UV ${x.users}"><span>${esc(analyticsName(x.name))}</span><div class="bar-track"><div class="bar-fill" style="width:${100*x.events/max}%"></div></div><span class="muted">${x.events} / ${x.users}</span></div>`).join('')}</div><div class="muted" style="margin-top:10px">PV / UV</div><details><summary>查看数据表</summary>${breakdownTable(rows,'功能','PV','UV')}</details>`}
+function trendTable(rows){return `<div style="overflow-x:auto"><table><thead><tr><th>日期</th><th>PAU</th><th>App DAU</th><th>Widget DAU</th><th>App Sessions</th></tr></thead><tbody>${(rows||[]).map(x=>`<tr><td>${esc(x.date)}</td><td>${x.pau??x.dau??0}</td><td>${x.app_dau??0}</td><td>${x.widget_dau??0}</td><td>${x.app_sessions??x.sessions??0}</td></tr>`).join('')||'<tr><td colspan="5" class="muted">暂无数据</td></tr>'}</tbody></table></div>`}
+function widgetTable(rows){return `<div style="overflow-x:auto"><table><thead><tr><th>事件</th><th>类型</th><th>尺寸</th><th>刷新</th><th>动作</th><th>PV</th><th>UV</th></tr></thead><tbody>${(rows||[]).map(x=>`<tr><td>${esc(x.event_type)}</td><td>${esc(x.kind)}</td><td>${esc(x.size)}</td><td>${esc(x.refresh_mode)}</td><td>${esc(x.action||'-')}</td><td>${x.events??0}</td><td>${x.users??0}</td></tr>`).join('')||'<tr><td colspan="7" class="muted">暂无数据</td></tr>'}</tbody></table></div>`}
+function renderTrendChart(el,rows){
+  if(!rows?.length){el.innerHTML='<span class="muted">暂无数据</span>';return}
+  rows=rows.map(p=>({...p,app_sessions:p.app_sessions??p.sessions??0}));
+  const W=760,H=250,L=42,R=14,T=14,B=30,max=Math.max(1,...rows.flatMap(x=>[x.pau??x.dau??0,x.app_dau??0,x.widget_dau??0,x.app_sessions]));
+  const x=i=>L+(W-L-R)*(rows.length === 1 ? 0.5 : i/(rows.length-1)),y=v=>T+(H-T-B)*(1-v/max);
+  const path=k=>rows.map((p,i)=>(i?'L':'M')+x(i).toFixed(1)+' '+y(p[k]??0).toFixed(1)).join(' ');
+  const grid=[0,.25,.5,.75,1].map(f=>`<line class="grid" x1="${L}" y1="${y(max*f)}" x2="${W-R}" y2="${y(max*f)}"/><text class="axis-label" x="${L-7}" y="${y(max*f)+4}" text-anchor="end">${Math.round(max*f)}</text>`).join('');
+  const step=Math.max(1,Math.ceil(rows.length/7));
+  const labels=rows.map((p,i)=>i%step===0||i===rows.length-1?`<text class="axis-label" x="${x(i)}" y="${H-7}" text-anchor="middle">${p.date.slice(5)}</text>`:'').join('');
+  const hitW=(W-L-R)/Math.max(rows.length,1);const hits=rows.map((p,i)=>`<rect class="hit" x="${Math.max(L,x(i)-hitW/2)}" y="${T}" width="${hitW}" height="${H-T-B}" onmousemove="chartTip(event,'${p.date}',${p.pau??p.dau??0},${p.app_dau??0},${p.widget_dau??0},${p.app_sessions})" onmouseleave="chartTipHide()"/>`).join('');
+  el.innerHTML=`<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="每日 PAU、App DAU、Widget DAU 和 App 会话趋势">${grid}${labels}<path class="series-pau" d="${path('pau')}"/><path class="series-app" d="${path('app_dau')}"/><path class="series-widget" d="${path('widget_dau')}"/><path class="series-sessions" d="${path('app_sessions')}"/>${hits}</svg><div class="chart-tip" id="chartTip" hidden></div>`;
+}
+function chartTip(ev,date,pau,appDau,widgetDau,appSessions){const tip=document.getElementById('chartTip'),box=ev.currentTarget.ownerSVGElement.getBoundingClientRect();tip.hidden=false;tip.textContent=date+'  PAU '+pau+'  App '+appDau+'  Widget '+widgetDau+'  App Sessions '+appSessions;tip.style.left=Math.min(ev.clientX-box.left+12,box.width-220)+'px';tip.style.top=Math.max(8,ev.clientY-box.top-42)+'px'}
+function chartTipHide(){const t=document.getElementById('chartTip');if(t)t.hidden=true}
+async function setAnalyticsExcluded(excluded){const id=+document.getElementById('excludeUid').value;if(!id)return toast('请输入有效用户 ID',1);try{await api('POST','/admin/analytics/exclusions',{user_id:id,excluded});toast(excluded?'已排除':'已恢复计入');RENDER.analytics()}catch(e){toast(e.message,1)}}
+
+RENDER.premium=async()=>{
+  const el=document.getElementById('p-premium');
+  el.innerHTML=`<h2 class="title">Premium 会员</h2>
+    <div class="card"><div class="grid-stats" id="premiumStats"><span class="muted">加载中…</span></div></div>
+    <div class="card"><div class="row"><h3 style="margin:0;flex:1">会员类型与爱发电映射</h3><span class="muted">plan_id 可留空以解除映射</span></div>
+      <input type="hidden" id="pm_edit_key"><div class="formgrid"><div><label>类型 key</label><input id="pm_key" placeholder="premium"></div><div><label>展示名称</label><input id="pm_title" placeholder="Premium"></div>
+      <div><label>爱发电 plan_id</label><input id="pm_plan" placeholder="粘贴爱发电方案 ID"></div><div><label>启用</label><label class="row"><input type="checkbox" id="pm_enabled" checked style="width:auto"> 对用户展示并接受订单</label></div></div>
+      <label>说明</label><input id="pm_desc" placeholder="会员权益说明"><div style="margin-top:12px"><div class="row"><b>展示权益</b><button class="sm ghost" onclick="addPremiumFeature()">+ 添加权益</button><span class="muted">key 用于客户端实际门禁，标题/描述用于展示</span></div><div id="pm_features_editor" style="margin-top:8px"></div></div>
+      <div class="row" style="margin-top:12px"><button onclick="savePremiumType()">保存类型</button><button class="ghost" onclick="resetPremiumType()">新建类型</button></div>
+      <div id="premiumTypes" class="muted" style="margin-top:12px">加载中…</div></div>
+    <div class="card"><h3>生成一次性激活码</h3><p class="muted">激活码只在生成成功时显示一次；请复制后发送给用户。</p>
+      <div class="row"><select id="pm_code_type" style="max-width:220px"><option value="">选择会员类型</option></select><input id="pm_order" placeholder="关联订单号（可选）" style="max-width:260px"><button onclick="generatePremiumCode()">生成</button></div><div id="pm_generated" style="margin-top:10px;font-family:monospace;color:var(--warn)"></div></div>
+    <div class="card"><div class="row"><h3 style="margin:0;flex:1">激活码管理</h3><select id="pm_code_state" onchange="loadPremiumCodes()" style="width:auto"><option value="">全部</option><option value="unused">未使用</option><option value="used">已使用</option><option value="disabled">已禁用</option><option value="expired">已过期</option></select></div><div style="overflow-x:auto"><table><thead><tr><th>ID</th><th>类型</th><th>订单</th><th>状态</th><th>使用者</th><th>创建/有效期</th><th>操作</th></tr></thead><tbody id="premiumCodes"><tr><td colspan=7 class="muted">加载中…</td></tr></tbody></table></div></div>
+    <div class="card"><h3>手动授权</h3><div class="row"><input id="pm_uid" type="number" min="1" placeholder="ZoneNaN 用户 ID" style="max-width:160px"><select id="pm_grant_type" style="max-width:180px"><option value="">选择会员类型</option></select><input id="pm_expires" type="datetime-local" title="留空为 2099-12-31 23:59:59" style="max-width:220px"><input id="pm_reason" placeholder="授权原因" style="min-width:220px"><button onclick="grantPremium()">授权</button></div><p class="muted">到期时间留空即使用长期有效（2099-12-31 23:59:59 +08:00）。已有记录可在下表单独修改或撤销。</p></div>
+    <div class="card"><div class="row"><h3 style="margin:0;flex:1">最近会员记录</h3><button class="ghost sm" onclick="syncAfdian()">同步爱发电订单</button></div><div style="overflow-x:auto"><table><thead><tr><th>用户</th><th>类型</th><th>来源</th><th>生效</th><th>到期</th><th>状态</th><th>操作</th></tr></thead><tbody id="premiumMembers"><tr><td colspan=6 class="muted">加载中…</td></tr></tbody></table></div></div>
+    <div class="card"><h3>未匹配 / 最近订单事件</h3><div style="overflow-x:auto"><table><thead><tr><th>订单</th><th>方案</th><th>状态</th><th>备注</th><th>错误</th><th>时间</th></tr></thead><tbody id="premiumEvents"><tr><td colspan=6 class="muted">加载中…</td></tr></tbody></table></div></div>`;
+  try{
+    const [overview,types,members,events]=await Promise.all([api('GET','/admin/memberships/overview'),api('GET','/admin/memberships/types'),api('GET','/admin/memberships/members?limit=100'),api('GET','/admin/memberships/events?limit=100')]);
+    window.PREMIUM_TYPES=types; resetPremiumType();
+    const typeOptions='<option value="">选择会员类型</option>'+types.filter(t=>t.enabled).map(t=>`<option value="${esc(t.key)}">${esc(t.title)} (${esc(t.key)})</option>`).join('');
+    document.getElementById('pm_code_type').innerHTML=typeOptions;
+    document.getElementById('pm_grant_type').innerHTML=typeOptions;
+    document.getElementById('premiumStats').innerHTML=[['有效权益',overview.active_memberships],['授予记录',overview.grant_records],['订单事件',overview.events],['未匹配',overview.unmatched_events]].map(([l,n])=>`<div class="stat"><div class="n">${n??0}</div><div class="l">${l}</div></div>`).join('');
+    document.getElementById('premiumTypes').innerHTML=types.map((t,i)=>`<div style="padding:10px 0;border-bottom:1px solid var(--border)"><div class="row"><b>${esc(t.title)}</b><span class="badge ${t.enabled?'ok':'danger'}">${t.enabled?'启用':'停用'}</span><span class="muted" style="flex:1">${esc(t.key)} · plan ${esc(t.afdian_plan_id||'未配置')}</span><button class="sm ghost" onclick="editPremiumType(${i})">编辑</button></div><div class="muted" style="margin-top:5px">${esc(t.description||'无说明')} · 权益 ${(t.features||[]).filter(f=>f.enabled!==false).map(f=>esc(f.title||f.key)).join('、')||'暂无'}</div></div>`).join('')||'<span class="muted">暂无类型</span>';
+    document.getElementById('premiumMembers').innerHTML=members.map(m=>`<tr><td>#${m.user_id}<br><span class="muted">${esc(m.nickname)}</span></td><td>${esc(m.type)}</td><td>${esc(m.source)}</td><td>${fmtTime(m.starts_at)}</td><td>${fmtTime(m.expires_at)}</td><td>${m.active?'<span class="badge ok">有效</span>':m.revoked_at?'<span class="badge danger">已撤销</span>':'<span class="badge">已过期</span>'}</td><td class="row">${m.revoked_at?'-':`<button class="sm ghost" onclick="editPremiumExpiry(${m.grant_id},'${m.expires_at||''}')">改到期</button><button class="sm danger" onclick="revokePremiumGrant(${m.grant_id})">撤销</button>`}</td></tr>`).join('')||'<tr><td colspan=8 class="muted">暂无记录</td></tr>';
+    document.getElementById('premiumEvents').innerHTML=events.map(e=>`<tr><td>${esc(e.order_id)}</td><td>${esc(e.plan_id)}</td><td><span class="badge ${e.process_status==='processed'?'ok':e.process_status==='unmatched'?'warn':'danger'}">${esc(e.process_status)}</span></td><td>${esc(e.remark)}</td><td>${esc(e.error_message||'-')}</td><td>${fmtTime(e.received_at)}</td></tr>`).join('')||'<tr><td colspan=6 class="muted">暂无事件</td></tr>';
+  }catch(e){document.getElementById('premiumStats').innerHTML='<span class="muted">'+esc(e.message)+'</span>'}
+  loadPremiumCodes();
+};
+async function loadPremiumCodes(){try{const state=document.getElementById('pm_code_state')?.value||'';const list=await api('GET','/admin/memberships/activation-codes?limit=100&state='+encodeURIComponent(state));const el=document.getElementById('premiumCodes');if(!el)return;el.innerHTML=list.map(c=>`<tr><td>${c.id}</td><td>${esc(c.membership_type)}</td><td>${esc(c.order_id||'-')}</td><td><span class="badge ${c.state==='unused'?'ok':c.state==='used'?'info':'danger'}">${esc(c.state)}</span></td><td>${c.used_by_user_id||'-'}</td><td>${fmtTime(c.created_at)}<br><span class="muted">${c.expires_at?fmtTime(c.expires_at):'不设过期'}</span></td><td>${c.state==='unused'?`<button class="sm danger" onclick="disablePremiumCode(${c.id})">软删除</button>`:'-'}</td></tr>`).join('')||'<tr><td colspan=7 class="muted">暂无激活码</td></tr>'}catch(e){const el=document.getElementById('premiumCodes');if(el)el.innerHTML='<tr><td colspan=7 class="muted">'+esc(e.message)+'</td></tr>'}}
+async function disablePremiumCode(id){if(!confirm('确认软删除该激活码？记录会保留，已使用码不可删除。'))return;try{await api('DELETE','/admin/memberships/activation-codes?id='+id);toast('激活码已软删除');loadPremiumCodes()}catch(e){toast(e.message,1)}}
+
+function premiumFeatureRow(feature={}){const id='pf_'+Math.random().toString(36).slice(2);return `<div class="row" data-feature-row="1" style="margin-bottom:6px"><input data-feature="key" placeholder="feature key" value="${esc(feature.key||'')}" style="max-width:180px"><input data-feature="title" placeholder="展示标题" value="${esc(feature.title||'')}" style="min-width:180px"><input data-feature="description" placeholder="说明（可选）" value="${esc(feature.description||'')}" style="flex:1"><label class="row" style="margin:0"><input data-feature="enabled" type="checkbox" style="width:auto" ${feature.enabled!==false?'checked':''}>启用</label><button class="sm danger" onclick="this.closest('[data-feature-row]').remove()">移除</button></div>`}
+function addPremiumFeature(feature={}){const el=document.getElementById('pm_features_editor');if(el)el.insertAdjacentHTML('beforeend',premiumFeatureRow(feature))}
+function collectPremiumFeatures(){return [...document.querySelectorAll('#pm_features_editor [data-feature-row]')].map(row=>({key:row.querySelector('[data-feature=key]').value.trim(),title:row.querySelector('[data-feature=title]').value.trim(),description:row.querySelector('[data-feature=description]').value.trim(),enabled:row.querySelector('[data-feature=enabled]').checked})).filter(f=>f.key||f.title)}
+function resetPremiumType(){document.getElementById('pm_edit_key').value='';document.getElementById('pm_key').value='';document.getElementById('pm_key').disabled=false;document.getElementById('pm_title').value='';document.getElementById('pm_plan').value='';document.getElementById('pm_desc').value='';document.getElementById('pm_enabled').checked=true;document.getElementById('pm_features_editor').innerHTML='';addPremiumFeature({key:'premium_center',title:'Premium 会员权益',description:'查看并使用 Premium 会员功能'});}
+function editPremiumType(index){const t=window.PREMIUM_TYPES?.[index];if(!t)return;document.getElementById('pm_edit_key').value=t.key;document.getElementById('pm_key').value=t.key;document.getElementById('pm_key').disabled=true;document.getElementById('pm_title').value=t.title||'';document.getElementById('pm_plan').value=t.afdian_plan_id||'';document.getElementById('pm_desc').value=t.description||'';document.getElementById('pm_enabled').checked=t.enabled!==false;document.getElementById('pm_features_editor').innerHTML='';(t.features||[]).forEach(addPremiumFeature);window.scrollTo({top:0,behavior:'smooth'})}
+async function savePremiumType(){const key=document.getElementById('pm_key').value.trim(),title=document.getElementById('pm_title').value.trim(),plan=document.getElementById('pm_plan').value.trim(),desc=document.getElementById('pm_desc').value.trim(),features=collectPremiumFeatures();if(!key||!title)return toast('请填写类型 key 和名称',1);if(features.some(f=>!f.key||!/^[a-z][a-z0-9_]{0,63}$/.test(f.key)))return toast('权益 key 必须是小写字母、数字或下划线',1);try{await api('POST','/admin/memberships/types',{key,title,description:desc,afdian_plan_id:plan,features,enabled:document.getElementById('pm_enabled').checked});toast('会员类型已保存');RENDER.premium()}catch(e){toast(e.message,1)}}
+async function generatePremiumCode(){const type=document.getElementById('pm_code_type').value.trim();if(!type)return toast('请选择会员类型',1);try{const r=await api('POST','/admin/memberships/activation-codes',{type_key:type,order_id:document.getElementById('pm_order').value.trim()});document.getElementById('pm_generated').innerHTML='激活码：<code id="pm_plain_code">'+esc(r.code)+'</code> <button class="sm" onclick="navigator.clipboard.writeText(document.getElementById(\'pm_plain_code\').textContent);toast(\'已复制激活码\')">复制</button><div class="muted">明文仅在本次生成响应中显示，离开页面后无法恢复。</div>';toast('激活码已生成')}catch(e){toast(e.message,1)}}
+async function grantPremium(){const uid=+document.getElementById('pm_uid').value,type=document.getElementById('pm_grant_type').value.trim(),reason=document.getElementById('pm_reason').value.trim(),raw=document.getElementById('pm_expires').value;const expires=raw?new Date(raw).toISOString():'';if(!uid||!type||!reason)return toast('请填写用户、类型和原因',1);try{await api('POST','/admin/memberships/grant',{user_id:uid,type_key:type,reason,expires_at:expires});toast('已授权');RENDER.premium()}catch(e){toast(e.message,1)}}
+async function editPremiumExpiry(id,current){const next=prompt('输入新的到期时间（ISO 8601，例如 2099-12-31T23:59:59+08:00）',current||'');if(!next)return;const reason=prompt('修改原因','管理员调整会员有效期');if(!reason)return;try{await api('POST','/admin/memberships/grants/expire',{grant_id:id,expires_at:next,reason});toast('有效期已修改');RENDER.premium()}catch(e){toast(e.message,1)}}
+async function revokePremiumGrant(id){if(!confirm('确认撤销这条会员授予记录？该操作会保留审计记录。'))return;try{await api('POST','/admin/memberships/grants/revoke',{grant_id:id,reason:'管理员在会员记录中撤销'});toast('会员记录已撤销');RENDER.premium()}catch(e){toast(e.message,1)}}
+async function revokePremium(){const uid=+document.getElementById('pm_uid').value,type=document.getElementById('pm_grant_type').value.trim(),reason=document.getElementById('pm_reason').value.trim();if(!uid||!type||!reason)return toast('请填写用户、类型和原因',1);if(!confirm('确认撤销该用户该类型的全部未撤销记录？'))return;try{await api('POST','/admin/memberships/revoke',{user_id:uid,type_key:type,reason});toast('已撤销');RENDER.premium()}catch(e){toast(e.message,1)}}
+async function syncAfdian(){try{const r=await api('POST','/admin/memberships/afdian-sync',{});toast('同步完成：处理 '+r.processed+'，未匹配 '+r.unmatched);RENDER.premium()}catch(e){toast(e.message,1)}}
+
+function fmtTime(v){if(!v)return '<span class="muted">暂无</span>';const d=new Date(v);return Number.isNaN(d.getTime())?esc(v):esc(d.toLocaleString())}
+
+const usersState={page:1,search:'',total:0,loading:false,request:0};
+RENDER.users=()=>{
+  const el=document.getElementById('p-users');
+  el.innerHTML=`<h2 class="title">用户</h2><div class="card">
+    <form class="row users-search" onsubmit="event.preventDefault();searchUsers()">
+      <input id="usersSearch" type="search" placeholder="搜索用户 ID / 昵称 / 身份" aria-label="搜索用户" value="${esc(usersState.search)}">
+      <button type="submit">搜索</button><button type="button" class="ghost" onclick="searchUsers(true)">清空</button>
+    </form>
+    <div class="muted" style="margin-bottom:8px">设备信息来自用户同意隐私协议后的最新埋点；最后上线时间来自认证请求。左右滑动查看完整表格。</div>
+    <div class="users-scroll" tabindex="0" role="region" aria-label="用户列表，可左右滚动"><table class="users-table"><thead><tr><th>ID</th><th>昵称</th><th>身份</th><th>App 版本</th><th>平台 / 系统</th><th>设备</th><th>最后上线</th><th>状态</th><th>操作</th></tr></thead><tbody id="ut"></tbody></table></div>
+    <div class="row users-pagination"><span class="muted" id="usersPageInfo" aria-live="polite"></span>
+      <button class="ghost" id="usersFirst" onclick="jumpUsersPage(1)" disabled>首页</button>
+      <button class="ghost" id="usersPrev" onclick="changeUsersPage(-1)" disabled>上一页</button>
+      <button class="ghost" id="usersNext" onclick="changeUsersPage(1)" disabled>下一页</button>
+      <button class="ghost" id="usersLast" onclick="jumpUsersPage(Math.max(1,Math.ceil(usersState.total/25)))" disabled>尾页</button>
+      <form class="row users-jump" onsubmit="event.preventDefault();jumpUsersPage()">
+        <input id="usersPageInput" type="number" min="1" max="1" step="1" value="${usersState.page}" aria-label="跳转页码" disabled>
+        <button class="ghost" id="usersJump" type="submit" disabled>跳转</button>
+      </form>
+      <button class="ghost" onclick="loadUsers()">刷新</button>
+    </div></div>`;
+  return loadUsers();
+};
+function searchUsers(clear=false){
+  const input=document.getElementById('usersSearch');
+  if(clear)input.value='';
+  usersState.search=input.value.trim();usersState.page=1;
+  loadUsers();
+}
+function changeUsersPage(delta){jumpUsersPage(usersState.page+delta)}
+function jumpUsersPage(page){
+  if(usersState.loading||document.getElementById('usersJump').disabled)return;
+  const last=Math.max(1,Math.ceil(usersState.total/25));
+  if(page===undefined)page=Number(document.getElementById('usersPageInput').value);
+  if(!Number.isSafeInteger(page)||page<1||page>last)return toast(`请输入 1 到 ${last} 之间的整数页码`,1);
+  document.getElementById('usersPageInput').value=page;
+  if(page===usersState.page)return;
+  usersState.page=page;loadUsers();
+}
+async function loadUsers(){
+  const tbody=document.getElementById('ut'),info=document.getElementById('usersPageInfo');
+  if(!tbody)return;
+  const request=++usersState.request;
+  usersState.loading=true;
+  for(const id of ['usersFirst','usersPrev','usersNext','usersLast','usersPageInput','usersJump'])document.getElementById(id).disabled=true;
+  tbody.innerHTML='<tr><td colspan="9" class="muted">加载中…</td></tr>';
+  info.textContent='加载中…';
+  try{
+    const params=new URLSearchParams({page:String(usersState.page),q:usersState.search});
+    const result=await api('GET','/admin/users?'+params);
+    if(request!==usersState.request)return;
+    usersState.page=result.page;usersState.total=result.total;
+    tbody.innerHTML=result.items.map(u=>`<tr>
+      <td>${u.id}</td>
+      <td>${esc(u.nickname)}${u.role==='admin'?' <span class="badge info">admin</span>':''}${u.is_whitelisted?' <span class="badge ok">白名单</span>':''}${u.is_beta?' <span class="badge warn">legacy beta</span>':''}${u.is_premium?' <span class="badge ok">Premium</span>':''}</td>
+      <td class="muted">${esc(u.identities||'-')}</td>
+      <td>${u.app_version?'<span class="badge info">'+esc(u.app_version)+'</span>':'<span class="muted">未上报</span>'}</td>
+      <td>${u.app_platform?esc(u.app_platform)+(u.app_os_version?'<br><span class="muted">'+esc(u.app_os_version)+'</span>':''):'<span class="muted">未上报</span>'}</td>
+      <td>${u.device_brand||u.device_model?esc([u.device_brand,u.device_model].filter(Boolean).join(' ')):'<span class="muted">未上报</span>'}</td>
+      <td>${fmtTime(u.last_online_at)}</td>
+      <td>${u.is_banned?'<span class="badge danger">封禁</span>':'<span class="badge ok">正常</span>'}</td>
+      <td><div class="row">
+        <button class="sm ${u.is_banned?'':'danger'}" onclick="banUser(${u.id},${!u.is_banned})">${u.is_banned?'解封':'封禁'}</button>
+        <button class="sm ghost" onclick="toggleWhite(${u.id},${!u.is_whitelisted})">${u.is_whitelisted?'移出白名单':'加白名单'}</button>
+        <button class="sm ghost" onclick="setBeta(${u.id},${!u.is_beta})">${u.is_beta?'移出 beta':'加入 beta'}</button>
+        <button class="sm ghost" onclick="setAdmin(${u.id},'${u.role==='admin'?'user':'admin'}')">${u.role==='admin'?'降为用户':'设为admin'}</button>
+        <button class="sm danger" data-name="${esc(u.nickname)}" onclick="delUser(${u.id},this.dataset.name)">删除</button>
+      </div></td></tr>`).join('')||'<tr><td colspan="9" class="muted">暂无匹配用户</td></tr>';
+    const pages=Math.max(1,Math.ceil(result.total/result.page_size));
+    info.textContent=`共 ${result.total} 个用户 · 第 ${result.page} / ${pages} 页 · 每页 ${result.page_size} 条`;
+    document.getElementById('usersFirst').disabled=result.page<=1;
+    document.getElementById('usersPrev').disabled=result.page<=1;
+    document.getElementById('usersNext').disabled=result.page>=pages;
+    document.getElementById('usersLast').disabled=result.page>=pages;
+    const pageInput=document.getElementById('usersPageInput');
+    pageInput.value=result.page;pageInput.max=pages;pageInput.disabled=result.total===0;
+    document.getElementById('usersJump').disabled=result.total===0;
+  }catch(e){
+    if(request!==usersState.request)return;
+    tbody.innerHTML='<tr><td colspan="9" class="muted">'+esc(e.message)+'</td></tr>';
+    info.textContent='加载失败，请点击刷新重试';
+  }finally{if(request===usersState.request)usersState.loading=false}
+}
+async function banUser(id,ban){try{await api('POST','/admin/users/ban',{user_id:id,ban});toast(ban?'已封禁':'已解封');loadUsers()}catch(e){toast(e.message,1)}}
+async function toggleWhite(id,w){try{await api('POST','/admin/users/role',{user_id:id,is_whitelisted:w});toast('已更新');loadUsers()}catch(e){toast(e.message,1)}}
+async function setBeta(id,member){try{await api('POST','/admin/beta',{user_id:id,member});toast(member?'已加入 beta':'已移出 beta');loadUsers()}catch(e){toast(e.message,1)}}
+async function setAdmin(id,role){try{await api('POST','/admin/users/role',{user_id:id,role});toast('已更新');loadUsers()}catch(e){toast(e.message,1)}}
+async function delUser(id,name){if(!confirm('确认删除用户 #'+id+' '+(name||'')+'？\n将级联删除其身份、成绩授权、设备、收藏等,不可恢复。'))return;try{await api('DELETE','/admin/users?id='+id);toast('已删除 #'+id);loadUsers()}catch(e){toast(e.message,1)}}
+
+const crashesState={page:1,pageSize:25,search:'',errorType:'',total:0,loading:false,request:0};
+RENDER.crashes=()=>{
+  const el=document.getElementById('p-crashes');
+  el.innerHTML=`<div class="row" style="justify-content:space-between;margin-bottom:20px"><h2 class="title" style="margin:0">崩溃上报</h2><button class="danger" onclick="deleteCrashReports()">清空全部</button></div><div class="card">
+    <form class="row users-search" onsubmit="event.preventDefault();searchCrashes()">
+      <input id="crashesSearch" type="search" placeholder="搜索记录/用户 ID、昵称、版本、机型、错误或堆栈" aria-label="搜索崩溃上报" value="${esc(crashesState.search)}">
+      <select id="crashesType" aria-label="错误分类" onchange="filterCrashes()"><option value="">全部分类</option>${crashesState.errorType?`<option selected value="${esc(crashesState.errorType)}">${esc(crashesState.errorType)}</option>`:''}</select>
+      <button type="submit">搜索</button><button type="button" class="ghost" onclick="searchCrashes(true)">清空</button>
+    </form>
+    <div class="muted" style="margin-bottom:8px">按最新上报排序。展开“堆栈”可查看完整错误上下文。</div>
+    <div class="crash-scroll" tabindex="0" role="region" aria-label="崩溃上报列表，可左右滚动"><table class="crash-table"><thead><tr><th>ID / 时间</th><th>用户</th><th>版本 / 设备</th><th>类型</th><th>错误信息</th><th>操作</th></tr></thead><tbody id="crashRows"></tbody></table></div>
+    <div class="row users-pagination"><span class="muted" id="crashesPageInfo" aria-live="polite"></span>
+      <button class="ghost" id="crashesFirst" onclick="jumpCrashesPage(1)" disabled>首页</button>
+      <button class="ghost" id="crashesPrev" onclick="changeCrashesPage(-1)" disabled>上一页</button>
+      <button class="ghost" id="crashesNext" onclick="changeCrashesPage(1)" disabled>下一页</button>
+      <button class="ghost" id="crashesLast" onclick="jumpCrashesPage(Math.max(1,Math.ceil(crashesState.total/crashesState.pageSize)))" disabled>尾页</button>
+      <form class="row users-jump" onsubmit="event.preventDefault();jumpCrashesPage()">
+        <input id="crashesPageInput" type="number" min="1" max="1" step="1" value="${crashesState.page}" aria-label="跳转页码" disabled>
+        <button class="ghost" id="crashesJump" type="submit" disabled>跳转</button>
+      </form>
+      <button class="ghost" onclick="loadCrashes()">刷新</button>
+    </div></div>`;
+  return loadCrashes();
+};
+function searchCrashes(clear=false){
+  const input=document.getElementById('crashesSearch');
+  if(clear)input.value='';
+  crashesState.search=input.value.trim();crashesState.page=1;loadCrashes();
+}
+function filterCrashes(){crashesState.errorType=document.getElementById('crashesType').value;crashesState.page=1;loadCrashes()}
+function changeCrashesPage(delta){jumpCrashesPage(crashesState.page+delta)}
+function jumpCrashesPage(page){
+  if(crashesState.loading||document.getElementById('crashesJump').disabled)return;
+  const last=Math.max(1,Math.ceil(crashesState.total/crashesState.pageSize));
+  if(page===undefined)page=Number(document.getElementById('crashesPageInput').value);
+  if(!Number.isSafeInteger(page)||page<1||page>last)return toast(`请输入 1 到 ${last} 之间的整数页码`,1);
+  document.getElementById('crashesPageInput').value=page;
+  if(page===crashesState.page)return;
+  crashesState.page=page;loadCrashes();
+}
+async function loadCrashes(){
+  const tbody=document.getElementById('crashRows'),info=document.getElementById('crashesPageInfo');
+  if(!tbody)return;
+  const request=++crashesState.request;
+  crashesState.loading=true;
+  for(const id of ['crashesFirst','crashesPrev','crashesNext','crashesLast','crashesPageInput','crashesJump'])document.getElementById(id).disabled=true;
+  tbody.innerHTML='<tr><td colspan="6" class="muted">加载中…</td></tr>';info.textContent='加载中…';
+  try{
+    const params=new URLSearchParams({page:String(crashesState.page),q:crashesState.search,error_type:crashesState.errorType});
+    const result=await api('GET','/admin/crash-reports?'+params);
+    if(request!==crashesState.request)return;
+    crashesState.page=result.page;crashesState.pageSize=result.page_size;crashesState.total=result.total;
+    const typeSelect=document.getElementById('crashesType');
+    typeSelect.innerHTML='<option value="">全部分类</option>'+(result.error_types||[]).map(x=>`<option value="${esc(x)}"${x===crashesState.errorType?' selected':''}>${esc(x)}</option>`).join('');
+    tbody.innerHTML=result.items.map(c=>`<tr>
+      <td><strong>#${c.id}</strong><div class="muted">${fmtTime(c.created_at)}</div></td>
+      <td>${c.user_id?`#${c.user_id}${c.nickname?'<div class="muted">'+esc(c.nickname)+'</div>':''}`:'<span class="muted">未登录</span>'}</td>
+      <td>${esc(c.app_version||'-')} · ${esc(c.platform||'-')}<div class="muted">${esc(c.device_model||'未知设备')}</div></td>
+      <td><span class="badge danger">${esc(c.error_type||'unknown')}</span></td>
+      <td class="crash-message">${esc(c.message||'-')}${c.stack?`<details><summary>查看堆栈</summary><pre class="crash-stack">${esc(c.stack)}</pre></details>`:''}</td>
+      <td><button class="sm danger" onclick="deleteCrashReports(${c.id})">删除</button></td>
+    </tr>`).join('')||'<tr><td colspan="6" class="muted">暂无匹配的崩溃上报</td></tr>';
+    const pages=Math.max(1,Math.ceil(result.total/result.page_size));
+    info.textContent=`共 ${result.total} 条 · 第 ${result.page} / ${pages} 页 · 每页 ${result.page_size} 条`;
+    document.getElementById('crashesFirst').disabled=result.page<=1;
+    document.getElementById('crashesPrev').disabled=result.page<=1;
+    document.getElementById('crashesNext').disabled=result.page>=pages;
+    document.getElementById('crashesLast').disabled=result.page>=pages;
+    const pageInput=document.getElementById('crashesPageInput');
+    pageInput.value=result.page;pageInput.max=pages;pageInput.disabled=result.total===0;
+    document.getElementById('crashesJump').disabled=result.total===0;
+  }catch(e){
+    if(request!==crashesState.request)return;
+    tbody.innerHTML='<tr><td colspan="6" class="muted">'+esc(e.message)+'</td></tr>';
+    info.textContent='加载失败，请点击刷新重试';
+  }finally{if(request===crashesState.request)crashesState.loading=false}
+}
+async function deleteCrashReports(id){
+  const all=!id;
+  if(!confirm(all?'确认清空全部崩溃上报？此操作不可恢复。':`确认删除崩溃上报 #${id}？`))return;
+  try{
+    const result=await api('DELETE','/admin/crash-reports'+(all?'':'?id='+id));
+    toast(`已删除 ${result.deleted} 条记录`);
+    if(all)crashesState.page=1;
+    loadCrashes();
+  }catch(e){toast(e.message,1)}
+}
+
+RENDER.announce=async()=>{
+  const el=document.getElementById('p-announce');
+  el.innerHTML=`<h2 class="title">公告</h2>
+  <div class="card"><h3>新建 / 编辑公告</h3>
+    <input type="hidden" id="an_id">
+    <div class="formgrid">
+      <div><label>形态</label><select id="an_kind">
+        <option value="modal">弹窗 (modal)</option>
+        <option value="status_card">状态页卡片 (status_card)</option>
+        <option value="mine_section">我的页文本区 (mine_section)</option>
+      </select></div>
+      <div><label>重要程度</label><select id="an_level">
+        <option value="info">普通 info</option><option value="important">重要 important</option><option value="critical">紧急 critical</option>
+      </select></div>
+      <div><label>受众</label><select id="an_release">
+        <option value="enabled">全部用户</option><option value="beta">beta 内测</option><option value="admin">仅管理员</option><option value="disabled">关闭</option>
+      </select></div>
+    </div>
+    <label>标题</label><input id="an_title">
+    <label>正文 (mine_section 支持 [文字](链接) 超链接)</label><textarea id="an_body"></textarea>
+    <div class="formgrid">
+      <div><label>强制阅读秒数 (仅弹窗,0=不强制)</label><input id="an_force" type="number" value="0"></div>
+      <div><label>排序 (大在前)</label><input id="an_sort" type="number" value="0"></div>
+    </div>
+    <div class="formgrid">
+      <div><label>生效起 (留空立即)</label><input id="an_start" type="datetime-local"></div>
+      <div><label>生效止 (留空永久)</label><input id="an_end" type="datetime-local"></div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <label class="row" style="margin:0"><input type="checkbox" id="an_active" checked style="width:auto"> 启用</label>
+      <label class="row" style="margin:0"><input type="checkbox" id="an_dismiss" checked style="width:auto"> 弹窗可关闭</label>
+    </div>
+    <div class="row" style="margin-top:12px"><button onclick="saveAnnounce()">保存</button><button class="ghost" onclick="resetAnnounce()">清空</button></div>
+  </div>
+  <div class="card"><h3>现有公告</h3><table><thead><tr><th>ID</th><th>形态</th><th>级别</th><th>标题</th><th>受众</th><th>状态</th><th>操作</th></tr></thead><tbody id="ant"></tbody></table></div>`;
+  loadAnnounce();
+};
+async function loadAnnounce(){
+  try{const list=await api('GET','/admin/announcements');
+    document.getElementById('ant').innerHTML=list.map(a=>`<tr>
+      <td>${a.id}</td><td>${a.kind}</td><td><span class="badge ${a.level==='critical'?'danger':a.level==='important'?'warn':'info'}">${a.level}</span></td>
+      <td>${esc(a.title)}</td><td><span class="badge ${a.release_state==='disabled'?'danger':a.release_state==='beta'?'warn':a.release_state==='admin'?'info':'ok'}">${esc(a.release_state||'enabled')}</span></td><td>${a.active?'<span class="badge ok">启用</span>':'<span class="badge">停用</span>'}</td>
+      <td class="row"><button class="sm ghost" onclick='editAnnounce(${JSON.stringify(a)})'>编辑</button>
+      <button class="sm danger" onclick="delAnnounce(${a.id})">删除</button></td></tr>`).join('')||'<tr><td colspan=6 class="muted">暂无</td></tr>';
+  }catch(e){toast(e.message,1)}
+}
+function editAnnounce(a){
+  an_id.value=a.id;an_kind.value=a.kind;an_level.value=a.level;an_title.value=a.title;an_body.value=a.body;
+  an_force.value=a.force_read_seconds;an_sort.value=a.sort;an_release.value=a.release_state||'enabled';an_active.checked=a.active;an_dismiss.checked=a.dismissible;
+  an_start.value=a.starts_at?a.starts_at.slice(0,16):'';an_end.value=a.ends_at?a.ends_at.slice(0,16):'';
+  window.scrollTo(0,0);
+}
+function resetAnnounce(){['an_id','an_title','an_body'].forEach(i=>document.getElementById(i).value='');an_force.value=0;an_sort.value=0;an_release.value='enabled';an_active.checked=true;an_dismiss.checked=true;an_start.value='';an_end.value=''}
+async function saveAnnounce(){
+  const b={id:+an_id.value||0,kind:an_kind.value,level:an_level.value,title:an_title.value,body:an_body.value,
+    force_read_seconds:+an_force.value||0,sort:+an_sort.value||0,active:an_active.checked,dismissible:an_dismiss.checked,release_state:an_release.value,
+    starts_at:an_start.value?new Date(an_start.value).toISOString():null,ends_at:an_end.value?new Date(an_end.value).toISOString():null};
+  try{await api('POST','/admin/announcements',b);toast('已保存');resetAnnounce();loadAnnounce()}catch(e){toast(e.message,1)}
+}
+async function delAnnounce(id){if(!confirm('删除该公告?'))return;try{await api('DELETE','/admin/announcements?id='+id);toast('已删除');loadAnnounce()}catch(e){toast(e.message,1)}}
+
+RENDER.ads=async()=>{
+  const el=document.getElementById('p-ads');
+  el.innerHTML=`<h2 class="title">广告位 / 运营位</h2>
+  <div class="card"><h3>新建 / 编辑</h3>
+    <input type="hidden" id="ad_id">
+    <label>图标 URL</label><input id="ad_icon">
+    <div class="formgrid">
+      <div><label>主标题</label><input id="ad_title"></div>
+      <div><label>副标题</label><input id="ad_sub"></div>
+    </div>
+    <label>链接 / scheme (如 https://… 或 weixin://…)</label><input id="ad_link">
+    <div class="formgrid">
+      <div><label>打开方式</label><select id="ad_mode">
+        <option value="in_app">应用内 (in_app)</option><option value="browser">浏览器 (browser)</option><option value="scheme">自定义协议 (scheme)</option>
+      </select></div>
+      <div><label>排序 (大在前)</label><input id="ad_sort" type="number" value="0"></div>
+    </div>
+    <label>受众</label><select id="ad_release">
+      <option value="enabled">全部用户</option><option value="beta">beta 内测</option><option value="admin">仅管理员</option><option value="disabled">关闭</option>
+    </select>
+    <label class="row" style="margin-top:8px"><input type="checkbox" id="ad_active" checked style="width:auto"> 启用</label>
+    <div class="row" style="margin-top:12px"><button onclick="saveAd()">保存</button><button class="ghost" onclick="resetAd()">清空</button></div>
+  </div>
+  <div class="card"><h3>现有广告位</h3><table><thead><tr><th>ID</th><th>标题</th><th>打开</th><th>受众</th><th>状态</th><th>操作</th></tr></thead><tbody id="adt"></tbody></table></div>`;
+  loadAds();
+};
+async function loadAds(){
+  try{const list=await api('GET','/admin/ads');
+    document.getElementById('adt').innerHTML=list.map(a=>`<tr>
+      <td>${a.id}</td><td>${esc(a.title)}<div class="muted">${esc(a.subtitle)}</div></td>
+      <td><span class="badge info">${a.open_mode}</span></td>
+      <td><span class="badge ${a.release_state==='disabled'?'danger':a.release_state==='beta'?'warn':a.release_state==='admin'?'info':'ok'}">${esc(a.release_state||'enabled')}</span></td>
+      <td>${a.active?'<span class="badge ok">启用</span>':'<span class="badge">停用</span>'}</td>
+      <td class="row"><button class="sm ghost" onclick='editAd(${JSON.stringify(a)})'>编辑</button>
+      <button class="sm danger" onclick="delAd(${a.id})">删除</button></td></tr>`).join('')||'<tr><td colspan=5 class="muted">暂无</td></tr>';
+  }catch(e){toast(e.message,1)}
+}
+function editAd(a){ad_id.value=a.id;ad_icon.value=a.icon_url;ad_title.value=a.title;ad_sub.value=a.subtitle;ad_link.value=a.link;ad_mode.value=a.open_mode;ad_sort.value=a.sort;ad_release.value=a.release_state||'enabled';ad_active.checked=a.active;window.scrollTo(0,0)}
+function resetAd(){['ad_id','ad_icon','ad_title','ad_sub','ad_link'].forEach(i=>document.getElementById(i).value='');ad_mode.value='in_app';ad_sort.value=0;ad_release.value='enabled';ad_active.checked=true}
+async function saveAd(){
+  const b={id:+ad_id.value||0,icon_url:ad_icon.value,title:ad_title.value,subtitle:ad_sub.value,link:ad_link.value,open_mode:ad_mode.value,sort:+ad_sort.value||0,active:ad_active.checked,release_state:ad_release.value};
+  try{await api('POST','/admin/ads',b);toast('已保存');resetAd();loadAds()}catch(e){toast(e.message,1)}
+}
+async function delAd(id){if(!confirm('删除?'))return;try{await api('DELETE','/admin/ads?id='+id);toast('已删除');loadAds()}catch(e){toast(e.message,1)}}
+
+RENDER.evals=async()=>{
+  const el=document.getElementById('p-evals');
+  el.innerHTML='<h2 class="title">评教审核</h2><div class="card"><table><thead><tr><th>ID</th><th>课程/老师</th><th>评分</th><th>评论</th><th>状态</th><th>操作</th></tr></thead><tbody id="evt"><tr><td colspan=6 class="muted">加载中…</td></tr></tbody></table></div>';
+  try{
+    const list=await api('GET','/admin/evaluations?page=0');
+    document.getElementById('evt').innerHTML=list.map(e=>`<tr>
+      <td>${e.id}</td><td>${esc(e.course_name)}<div class="muted">${esc(e.teacher_name)}</div></td>
+      <td>${e.rating}</td><td style="max-width:340px">${esc(e.comment)}</td>
+      <td>${e.is_hidden?'<span class="badge danger">已下架</span>':'<span class="badge ok">显示</span>'}</td>
+      <td><button class="sm ${e.is_hidden?'ghost':'danger'}" onclick="hideEval(${e.id},${!e.is_hidden})">${e.is_hidden?'恢复':'下架'}</button></td></tr>`).join('')||'<tr><td colspan=6 class="muted">暂无评教</td></tr>';
+  }catch(e){document.getElementById('evt').innerHTML='<tr><td colspan=6 class="muted">'+esc(e.message)+'</td></tr>'}
+};
+async function hideEval(id,hidden){try{await api('POST','/admin/evaluations/hide',{evaluation_id:id,hidden});toast(hidden?'已下架':'已恢复');RENDER.evals()}catch(e){toast(e.message,1)}}
+
+RENDER.risk=async()=>{
+  const el=document.getElementById('p-risk');
+  el.innerHTML='<h2 class="title">风控</h2><div class="card"><h3>风险命中</h3><table><thead><tr><th>ID</th><th>用户</th><th>设备</th><th>规则</th><th>分</th><th>时间</th><th>操作</th></tr></thead><tbody id="rkt"><tr><td colspan=7 class="muted">加载中…</td></tr></tbody></table></div>';
+  try{
+    const list=await api('GET','/admin/risk/flags?page=0');
+    document.getElementById('rkt').innerHTML=list.map(f=>`<tr style="${f.resolved?'opacity:.5':''}">
+      <td>${f.id}</td><td>${f.user_id||'-'}</td><td class="muted" style="font-family:monospace">${esc((f.device_fingerprint||'').slice(0,12))}</td>
+      <td>${esc(f.rule)}<div class="muted">${esc(f.detail)}</div></td><td>${f.score}</td><td class="muted">${fmtTime(f.created_at)}</td>
+      <td class="row">${f.resolved?'<span class="badge">已处理</span>':`<button class="sm ghost" onclick="resolveRisk(${f.id})">标记处理</button>`}
+      ${f.device_fingerprint?`<button class="sm danger" onclick="blockDev('${esc(f.device_fingerprint)}')">封设备</button>`:''}</td></tr>`).join('')||'<tr><td colspan=7 class="muted">暂无命中</td></tr>';
+  }catch(e){document.getElementById('rkt').innerHTML='<tr><td colspan=7 class="muted">'+esc(e.message)+'</td></tr>'}
+};
+async function resolveRisk(id){try{await api('POST','/admin/risk/resolve',{id});toast('已处理');RENDER.risk()}catch(e){toast(e.message,1)}}
+async function blockDev(fp){if(!confirm('封禁该设备?'))return;try{await api('POST','/admin/risk/block-device',{device_fingerprint:fp,block:true,reason:'manual'});toast('已封设备');RENDER.risk()}catch(e){toast(e.message,1)}}
+
+RENDER.releases=async()=>{
+  const el=document.getElementById('p-releases');
+  el.innerHTML=`<h2 class="title">发布记录</h2>
+  <div class="card"><h3>新增 / 编辑 Release Record</h3>
+    <input type="hidden" id="rel_id">
+    <div class="formgrid"><div><label>发布通道</label><select id="rel_channel"><option>stable</option><option>beta</option><option>rc</option><option>internal</option></select></div>
+      <div><label>更新提示方式</label><select id="rel_update_mode"><option value="popup">启动弹窗</option><option value="silent">状态页卡片（静默启动）</option></select></div>
+      <div><label>最低支持版本</label><input id="rel_min" placeholder="留空表示不限制"></div>
+      <div><label>最低支持 build</label><input id="rel_min_build" type="number" min="0" value="0"></div>
+      <div><label>Android APK 公网 URL</label><input id="rel_android" placeholder="粘贴 R2 公开 HTTPS URL"></div>
+      <div><label>Windows URL（可选）</label><input id="rel_windows"></div>
+      <div><label>Windows SHA-256（可选）</label><input id="rel_windows_sha"></div>
+      <div><label>iOS / TestFlight URL（可选）</label><input id="rel_ios"></div>
+    </div>
+    <div class="card" id="rel_artifact" style="display:none;background:var(--surface2);margin-top:10px"><h3 style="color:var(--ok)">APK 已验证</h3><div class="formgrid"><div><span class="muted">Version</span><div id="rel_artifact_version">-</div></div><div><span class="muted">Build</span><div id="rel_artifact_build">-</div></div><div><span class="muted">Size</span><div id="rel_artifact_size">-</div></div><div><span class="muted">SHA-256</span><div id="rel_artifact_sha" style="font-family:monospace;word-break:break-all">-</div></div><div><span class="muted">Verified</span><div id="rel_artifact_time">刚刚</div></div></div></div>
+    <div class="row" style="margin-top:10px"><button class="ghost" onclick="inspectReleaseAPK()">读取 / 校验 APK</button><span class="muted">保存时 Backend 会重新下载并校验，Version、Build、Size、SHA-256 均由 APK 本体自动绑定。</span></div>
+    <label>更新说明</label><textarea id="rel_changelog"></textarea>
+    <label class="row" style="margin-top:8px"><input type="checkbox" id="rel_force" style="width:auto"> 强制更新</label>
+    <div class="row" style="margin-top:12px"><button onclick="saveRelease()">保存</button><button class="ghost" onclick="resetRelease()">清空</button></div>
+  </div>
+  <div class="card"><h3>补登历史 Release Record</h3><p class="muted">用于补录遗漏的旧版本（例如 2.2.1）。仅进入 changelog 历史，不包含下载地址，也不会参与更新下载。</p>
+    <div class="formgrid">
+      <div><label>历史版本</label><input id="hist_version" placeholder="例如 2.2.1"></div>
+      <div><label>历史 build</label><input id="hist_build" type="number" min="1" placeholder="例如 2014"></div>
+      <div><label>发布通道</label><select id="hist_channel"><option>stable</option><option>beta</option><option>rc</option><option>internal</option></select></div>
+      <div><label>最低支持版本（可选）</label><input id="hist_min" placeholder="留空表示不限制"></div>
+      <div><label>最低支持 build（可选）</label><input id="hist_min_build" type="number" min="0" value="0"></div>
+    </div>
+    <label>更新说明</label><textarea id="hist_changelog" placeholder="历史版本更新内容"></textarea>
+    <label class="row" style="margin-top:8px"><input type="checkbox" id="hist_force" style="width:auto"> 强制更新</label>
+    <div class="row" style="margin-top:12px"><button onclick="saveHistoricalRelease()">补登历史记录</button><button class="ghost" onclick="resetHistoricalRelease()">清空</button></div>
+  </div>
+  <div class="card" id="whats_new_editor" style="display:none"><h3 id="whats_new_heading">本版亮点</h3>
+    <p class="muted">仅在用户安装这一版本后展示；不填则不提示。图片需先上传到 HTTPS 公网地址。</p>
+    <input type="hidden" id="whats_new_release_id">
+    <label>标题</label><input id="whats_new_title" maxlength="80" placeholder="例如：课表提醒，抬眼就能看到">
+    <label>简介（可选）</label><textarea id="whats_new_summary" maxlength="240"></textarea>
+    <div id="whats_new_items"></div>
+    <div class="row"><button class="ghost" onclick="addWhatsNewItem()">添加亮点（最多 3 条）</button><button onclick="saveWhatsNew()">保存亮点</button><button class="ghost" onclick="clearWhatsNew()">清空亮点</button><button class="ghost" onclick="whats_new_editor.style.display='none'">取消</button></div>
+  </div>
+  <div class="card"><div class="row"><h3 style="margin:0;flex:1">历史 Release Record</h3><label class="row" style="margin:0"><input type="checkbox" id="rel_deleted" style="width:auto" onchange="loadReleases()"> 显示已删除</label></div>
+    <p class="muted" style="margin:8px 0">stable 历史默认保留；发布 stable 时同版本的 beta/rc/internal 会自动归档。build number 全局不可复用。</p>
+    <div style="overflow-x:auto"><table><thead><tr><th>ID</th><th>版本 / build</th><th>channel</th><th>提示方式</th><th>状态</th><th>APK</th><th>说明</th><th>操作</th></tr></thead><tbody id="relt"></tbody></table></div></div>
+  <div class="card"><h3>Release beta 名单（beta / rc）</h3><p class="muted">此名单独立于 premium 的旧 beta_memberships。</p><div class="row"><input id="release_beta_uid" type="number" min="1" placeholder="用户 ID" style="max-width:180px"><button onclick="setReleaseBeta(true)">加入</button><button class="ghost" onclick="setReleaseBeta(false)">移除</button></div><div id="release_beta_list" class="muted" style="margin-top:10px">加载中…</div></div>`;
+  loadReleases(); loadReleaseBeta();
+};
+async function loadReleaseBeta(){try{const ids=await api('GET','/admin/release-beta');release_beta_list.textContent=ids.length?ids.map(id=>'#'+id).join('、'):'暂无名单'}catch(e){release_beta_list.textContent=e.message}}
+async function setReleaseBeta(member){const id=+release_beta_uid.value;if(!id)return toast('请输入有效用户 ID',1);try{await api(member?'POST':'DELETE','/admin/release-beta'+(member?'':'?user_id='+id),member?{user_id:id,member:true}:undefined);toast(member?'已加入发布 beta':'已移除发布 beta');release_beta_uid.value='';loadReleaseBeta()}catch(e){toast(e.message,1)}}
+async function loadReleases(){
+  try{const list=await api('GET','/admin/releases?include_deleted='+(rel_deleted?.checked?'true':'false'));
+    window.releaseRecords=list;
+    relt.innerHTML=list.map(r=>`<tr><td>${r.id}</td><td>${esc(r.version)}<br><span class="muted">build ${r.build_number}</span></td>
+      <td><span class="badge ${r.channel==='stable'?'ok':r.channel==='internal'?'info':'warn'}">${esc(r.channel)}</span></td>
+      <td><span class="badge ${r.update_mode==='silent'?'info':'ok'}">${r.update_mode==='silent'?'状态页卡片':'启动弹窗'}</span></td><td>${r.deleted_at?'<span class="badge danger">已删除</span>':r.active?'<span class="badge ok">生效</span>':'<span class="badge">已归档</span>'}</td>
+      <td>${r.android_version_name?`v${esc(r.android_version_name)}<br><span class="muted">${r.android_size_bytes?formatArtifactSize(r.android_size_bytes):'-'} · ${esc(String(r.android_sha256||'').slice(0,10))}…</span>`:'<span class="muted">未验证</span>'}</td><td>${esc(r.changelog||'').slice(0,100)}</td><td class="row"><button class="sm ghost" onclick="editWhatsNew(${r.id})">本版亮点</button><button class="sm ghost" onclick="editReleaseById(${r.id})">编辑</button>
+      ${r.deleted_at?`<button class="sm" onclick="restoreRelease(${r.id})">恢复</button>`:`<button class="sm ghost" onclick="archiveRelease(${r.id},${r.active})">${r.active?'归档':'取消归档'}</button><button class="sm danger" onclick="deleteRelease(${r.id})">删除</button>`}</td></tr>`).join('')||'<tr><td colspan=8 class="muted">暂无记录</td></tr>';
+  }catch(e){relt.innerHTML='<tr><td colspan=7 class="muted">'+esc(e.message)+'</td></tr>'}
+}
+function addWhatsNewItem(item={}){
+  const box=document.getElementById('whats_new_items');if(box.children.length>=3)return toast('最多 3 条亮点',1);
+  const row=document.createElement('div');row.className='card whats-new-item';row.style.background='var(--surface2)';
+  const platform=(item.platforms||[])[0]||'';
+  row.innerHTML=`<div class="row"><strong style="flex:1">亮点</strong><button class="sm ghost" onclick="this.closest('.whats-new-item').remove()">删除这条</button></div>
+    <label>标题</label><input class="wn-title" maxlength="80" value="${esc(item.title||'')}">
+    <label>说明</label><textarea class="wn-body" maxlength="600">${esc(item.body||'')}</textarea>
+    <div class="formgrid"><div><label>适用平台</label><select class="wn-platform"><option value="">所有平台</option><option value="android">Android</option><option value="ios">iOS</option><option value="windows">Windows</option></select></div>
+    <div><label>按钮目标</label><select class="wn-action"><option value="">不显示按钮</option><option value="open_reminder_settings">打开提醒与通知（仅 Android）</option></select></div></div>
+    <label>按钮文字（有目标时必填）</label><input class="wn-label" maxlength="40" value="${esc(item.action_label||'')}">
+    <label>图片 HTTPS URL（可选）</label><input class="wn-image" value="${esc(item.image_url||'')}">`;
+  box.appendChild(row);row.querySelector('.wn-platform').value=platform;row.querySelector('.wn-action').value=item.action_id||'';
+}
+function editWhatsNew(id){
+  const r=(window.releaseRecords||[]).find(x=>x.id===id);if(!r)return;
+  whats_new_editor.style.display='block';whats_new_release_id.value=id;
+  whats_new_heading.textContent=`本版亮点 · ${r.version} build ${r.build_number}`;
+  whats_new_title.value=r.whats_new?.title||'';whats_new_summary.value=r.whats_new?.summary||'';
+  whats_new_items.replaceChildren();(r.whats_new?.items||[]).forEach(addWhatsNewItem);
+  if(!whats_new_items.children.length)addWhatsNewItem();
+  whats_new_editor.scrollIntoView({behavior:'smooth',block:'start'});
+}
+async function saveWhatsNew(){
+  const items=[...whats_new_items.querySelectorAll('.whats-new-item')].map(row=>{
+    const val=selector=>row.querySelector(selector).value.trim();
+    return {title:val('.wn-title'),body:val('.wn-body'),platforms:val('.wn-platform')?[val('.wn-platform')]:[],image_url:val('.wn-image'),action_id:val('.wn-action'),action_label:val('.wn-label')};
+  });
+  if(!whats_new_title.value.trim()||!items.length)return toast('请填写标题及至少一条亮点；清空请用“清空亮点”',1);
+  try{await api('POST','/admin/releases/whats-new',{id:+whats_new_release_id.value,whats_new:{title:whats_new_title.value.trim(),summary:whats_new_summary.value.trim(),items}});toast('本版亮点已保存');whats_new_editor.style.display='none';loadReleases()}catch(e){toast(e.message,1)}
+}
+async function clearWhatsNew(){
+  if(!confirm('确认清空这条发布记录的本版亮点？'))return;
+  try{await api('POST','/admin/releases/whats-new',{id:+whats_new_release_id.value,whats_new:null});toast('本版亮点已清空');whats_new_editor.style.display='none';loadReleases()}catch(e){toast(e.message,1)}
+}
+function formatArtifactSize(n){n=Number(n||0);if(n<1024*1024)return n+' B';return (n/1024/1024).toFixed(1)+' MB'}
+function showReleaseArtifact(a){const box=document.getElementById('rel_artifact');if(!a){box.style.display='none';return}box.style.display='block';document.getElementById('rel_artifact_version').textContent=a.version_name||'-';document.getElementById('rel_artifact_build').textContent=a.version_code||'-';document.getElementById('rel_artifact_size').textContent=formatArtifactSize(a.size_bytes);const sha=String(a.sha256||'');document.getElementById('rel_artifact_sha').textContent=sha.length>20?sha.slice(0,10)+'…'+sha.slice(-8):sha||'-';document.getElementById('rel_artifact_time').textContent=a.verified_at?'刚刚':'-'}
+async function inspectReleaseAPK(){const url=rel_android.value.trim();if(!url)return toast('请先粘贴 APK URL',1);try{const a=await api('POST','/admin/releases/inspect-apk',{url});showReleaseArtifact(a);toast('APK 已验证')}catch(e){showReleaseArtifact(null);toast(e.message,1)}}
+function editReleaseById(id){const r=(window.releaseRecords||[]).find(x=>x.id===id);if(r)editRelease(r)}
+function editRelease(r){rel_id.value=r.id;rel_channel.value=r.channel;rel_update_mode.value=r.update_mode==='silent'?'silent':'popup';rel_min.value=r.min_supported||'';rel_min_build.value=r.min_supported_build_number||0;rel_android.value=r.android_url||'';rel_windows.value=r.windows_url||'';rel_windows_sha.value=r.windows_sha256||'';rel_ios.value=r.ios_url||'';rel_changelog.value=r.changelog||'';rel_force.checked=!!r.force;showReleaseArtifact(r.android_version_name?{version_name:r.android_version_name,version_code:r.android_version_code,size_bytes:r.android_size_bytes,sha256:r.android_sha256,verified_at:r.android_verified_at}:null);window.scrollTo(0,0)}
+function resetRelease(){['rel_id','rel_android','rel_windows','rel_windows_sha','rel_ios','rel_changelog'].forEach(i=>document.getElementById(i).value='');rel_channel.value='stable';rel_update_mode.value='popup';rel_min.value='';rel_min_build.value=0;rel_force.checked=false;showReleaseArtifact(null)}
+async function saveRelease(){const b={id:+rel_id.value||0,channel:rel_channel.value,update_mode:rel_update_mode.value,min_supported:rel_min.value.trim(),min_supported_build_number:+rel_min_build.value||0,android_url:rel_android.value.trim(),windows_url:rel_windows.value.trim(),windows_sha256:rel_windows_sha.value.trim(),ios_url:rel_ios.value.trim(),changelog:rel_changelog.value,force:rel_force.checked};try{const result=await api('POST','/admin/releases',b);showReleaseArtifact(result.artifact);toast('发布记录已保存');resetRelease();loadReleases()}catch(e){toast(e.message,1)}}
+async function saveHistoricalRelease(){const b={version:hist_version.value.trim(),build_number:+hist_build.value||0,channel:hist_channel.value,min_supported:hist_min.value.trim(),min_supported_build_number:+hist_min_build.value||0,changelog:hist_changelog.value,force:hist_force.checked};if(!b.version||b.build_number<=0)return toast('请填写有效的版本和 build',1);if(!b.changelog.trim())return toast('请填写更新说明',1);try{await api('POST','/admin/releases/backfill',b);toast('历史 Release 已补登');resetHistoricalRelease();loadReleases()}catch(e){toast(e.message,1)}}
+function resetHistoricalRelease(){hist_version.value='';hist_build.value='';hist_channel.value='stable';hist_min.value='';hist_min_build.value=0;hist_changelog.value='';hist_force.checked=false}
+async function restoreRelease(id){try{await api('POST','/admin/releases/restore',{id});toast('已恢复');loadReleases()}catch(e){toast(e.message,1)}}
+async function deleteRelease(id){if(!confirm('确认软删除该发布记录？'))return;try{await api('DELETE','/admin/releases?id='+id);toast('已软删除');loadReleases()}catch(e){toast(e.message,1)}}
+
+RENDER.settings=async()=>{
+  const el=document.getElementById('p-settings');
+  el.innerHTML='<h2 class="title">应用配置</h2><div class="card"><h3>功能与更新受众</h3><p class="muted">实验性功能关闭时客户端会隐藏入口并阻止调用；beta 名单按内部用户 ID 管理。</p><div class="formgrid" style="margin-top:8px">'+
+    ['update_release_state','grade','calendar_sync','permission_center','windows_reminder','membership_center','post_upgrade_guide'].map(k=>`<div><label>${k==='update_release_state'?'应用更新':k==='membership_center'?'会员中心':k==='post_upgrade_guide'?'本版亮点':k}<select id="aud_${k}"><option value="enabled">全部用户</option><option value="beta">beta 内测</option><option value="admin">仅管理员</option><option value="disabled">关闭</option></select></label></div>`).join('')+
+    '</div><div class="row" style="margin-top:12px"><button onclick="saveAudienceSettings()">保存受众设置</button></div></div><div class="card"><table><thead><tr><th>Key</th><th>Value</th><th></th></tr></thead><tbody id="stt"></tbody></table><div class="card" style="margin-top:12px;display:flex;gap:8px;align-items:center"><input id="set_new_key" placeholder="新配置键,如 grade_enabled" style="flex:1"><input id="set_new_val" placeholder="值,如 false" style="flex:1"><button class="sm" onclick="addSetting()">新增</button></div><div class="muted" style="margin-top:10px">含版本(app_latest_version/app_apk_url/app_apk_sha256/app_force_update)、给分开关(grade_enabled=true/false)、验证码、风控阈值、免费额度等。</div></div>';
+  try{
+    const list=await api('GET','/admin/settings');
+    // 长文本项(如更新日志)用 textarea,可直接敲回车分多行/多条;其余用单行 input。
+    const MULTILINE=['app_changelog'];
+    document.getElementById('stt').innerHTML=list.map(s=>{
+      const field=MULTILINE.includes(s.key)
+        ? `<textarea id="set_${esc(s.key)}" style="min-height:80px" placeholder="每行一条,App 内会渲染成分点列表">${esc(s.value)}</textarea>`
+        : `<input id="set_${esc(s.key)}" value="${esc(s.value)}">`;
+      return `<tr>
+      <td style="font-family:monospace">${esc(s.key)}</td>
+      <td>${field}</td>
+      <td><button class="sm" onclick="saveSetting('${esc(s.key)}')">保存</button></td></tr>`;
+    }).join('');
+    const settingValues=Object.fromEntries(list.map(s=>[s.key,s.value]));
+    const audienceKeys={update_release_state:'update_release_state',grade:'feature_grade_state',calendar_sync:'feature_calendar_sync_state',permission_center:'feature_permission_center_state',windows_reminder:'feature_windows_reminder_state',membership_center:'feature_membership_center_state',post_upgrade_guide:'feature_post_upgrade_guide_state'};
+    Object.entries(audienceKeys).forEach(([key,setting])=>{document.getElementById('aud_'+key).value=settingValues[setting]||(key==='membership_center'?'disabled':'enabled')});
+  }catch(e){document.getElementById('stt').innerHTML='<tr><td colspan=3 class="muted">'+esc(e.message)+'</td></tr>'}
+};
+async function saveAudienceSettings(){
+  const mapping={update_release_state:'update_release_state',grade:'feature_grade_state',calendar_sync:'feature_calendar_sync_state',permission_center:'feature_permission_center_state',windows_reminder:'feature_windows_reminder_state',membership_center:'feature_membership_center_state',post_upgrade_guide:'feature_post_upgrade_guide_state'};
+  try{await Promise.all(Object.entries(mapping).map(([key,setting])=>api('POST','/admin/settings',{key:setting,value:document.getElementById('aud_'+key).value})));toast('受众设置已保存');RENDER.settings()}catch(e){toast(e.message,1)}
+}
+async function saveSetting(k){const v=document.getElementById('set_'+k).value;try{await api('POST','/admin/settings',{key:k,value:v});toast('已保存 '+k)}catch(e){toast(e.message,1)}}
+async function addSetting(){const k=document.getElementById('set_new_key').value.trim();if(!k)return toast('先填键名',1);try{await api('POST','/admin/settings',{key:k,value:document.getElementById('set_new_val').value});toast('已保存 '+k);RENDER.settings()}catch(e){toast(e.message,1)}}
+
+let LEGAL_DOCS=[];
+RENDER.legal=async()=>{
+  const el=document.getElementById('p-legal');
+  el.innerHTML=`<h2 class="title">协议文档</h2>
+  <div class="card"><h3>编辑 / 发布</h3>
+    <label>类型</label><select id="lg_type" onchange="loadLegalInto()">
+      <option value="user_agreement">用户协议</option><option value="privacy_policy">隐私政策</option>
+      <option value="grade_consent">给分授权说明</option><option value="faq">FAQ</option><option value="help">帮助</option>
+    </select>
+    <label>标题</label><input id="lg_title">
+    <label>正文 (Markdown)</label><textarea id="lg_content" style="min-height:260px"></textarea>
+    <div class="row" style="margin-top:10px">
+      <button onclick="editLegal()">保存修改(不升版本)</button>
+      <button class="ghost" onclick="publishLegal()">发布为新版本</button>
+      <span class="muted">改错别字用「保存修改」;内容有实质变化、想让用户重新阅读用「发布新版本」。</span>
+    </div>
+  </div>
+  <div class="card"><h3>现有文档(点击载入编辑)</h3><table><thead><tr><th>类型</th><th>版本</th><th>标题</th><th>发布时间</th></tr></thead><tbody id="lgt"></tbody></table></div>`;
+  loadLegal().then(loadLegalInto);
+};
+async function loadLegal(){
+  try{LEGAL_DOCS=await api('GET','/admin/legal');
+    document.getElementById('lgt').innerHTML=LEGAL_DOCS.map(d=>`<tr style="cursor:pointer" onclick="pickLegal('${d.doc_type}')"><td>${d.doc_type}</td><td>${d.version}</td><td>${esc(d.title)}</td><td class="muted">${fmtTime(d.published_at)}</td></tr>`).join('')||'<tr><td colspan=4 class="muted">暂无</td></tr>';
+  }catch(e){toast(e.message,1)}
+}
+// 把某类型的当前(最高版本)内容载入表单。
+function loadLegalInto(){
+  const t=lg_type.value;
+  // /admin/legal 按 doc_type,version DESC 返回,取该类型第一条即最高版本。
+  const cur=LEGAL_DOCS.filter(d=>d.doc_type===t).sort((a,b)=>b.version-a.version)[0];
+  lg_title.value=cur?cur.title:'';
+  lg_content.value=cur?cur.content:'';
+}
+function pickLegal(t){lg_type.value=t;loadLegalInto();window.scrollTo(0,0)}
+async function editLegal(){
+  const b={doc_type:lg_type.value,title:lg_title.value,content:lg_content.value};
+  try{await api('POST','/admin/legal/edit',b);toast('已保存修改');loadLegal()}catch(e){toast(e.message,1)}
+}
+async function publishLegal(){
+  if(!confirm('发布为新版本?版本号会 +1,App 会提示用户重新阅读。'))return;
+  const b={doc_type:lg_type.value,title:lg_title.value,content:lg_content.value};
+  try{await api('POST','/admin/legal',b);toast('已发布新版本');loadLegal()}catch(e){toast(e.message,1)}
+}
+
+// 自动登录(已存密钥)
+if(SECRET){document.getElementById('secret').value=SECRET;login()}
+// --- 校园地图地点 ---
+let CAMPUS_MAP_PLACES=[];
+let CAMPUS_MAP_CONTRIBUTIONS=[];
+let CAMPUS_MAP_REVIEW_ID=0;
+const CAMPUS_MAP_CAMPUSES=[['xiaoxiang','潇湘校区'],['south','麓南校区'],['main','岳麓山校区'],['railway','天心校区'],['xiangya_new','杏林校区'],['xiangya_old','湘雅老校区']];
+const CAMPUS_MAP_CATEGORIES=[['teaching_research','教学科研'],['transportation','交通出行'],['life_service','生活服务'],['culture_sports','文体服务'],['medical_health','医疗健康'],['government_service','政务服务'],['landscape','景观景点']];
+const CAMPUS_MAP_TYPES={
+  teaching_research:[['teaching_research','教学科研'],['teaching_building','教学楼'],['college','学院楼'],['library','图书馆'],['research_experiment','科研实验'],['study_space','学习空间']],
+  transportation:[['transportation','交通出行'],['metro','地铁'],['public_bus','公交'],['shuttle_bus','摆渡车'],['campus_bus','校车'],['parking','停车场'],['entrance','出入口']],
+  life_service:[['life_service','生活服务'],['comprehensive_service','综合服务'],['dining_hall','食堂'],['dormitory','宿舍'],['restroom','洗手间'],['supermarket','超市'],['express','快递'],['merchant','商户'],['charging_station','充电设施'],['printing_service','打印服务']],
+  culture_sports:[['sports_venue','体育场馆'],['cultural_venue','文化场馆']],medical_health:[['medical_health','医疗健康'],['campus_hospital','校医院'],['medical_station','医疗点'],['aed','AED']],government_service:[['government_service','政务服务']],landscape:[['landscape','景观景点']]
+};
+const CAMPUS_MAP_CENTERS={xiaoxiang:[112.9361126,28.1527372],south:[112.9305336,28.1638989],main:[112.9261991,28.1717870],railway:[112.9859802,28.1428610],xiangya_new:[112.9374215,28.2230930],xiangya_old:[112.9797575,28.2183632]};
+const CAMPUS_INCIDENT_TYPES={traffic_enforcement:'交通执法提醒',road_closed:'封路',congestion:'拥堵',cat:'小猫'};
+const CAMPUS_MAP_PICKER={key:'',lon:CAMPUS_MAP_CENTERS.xiaoxiang[0],lat:CAMPUS_MAP_CENTERS.xiaoxiang[1],zoom:17,point:null,drag:null,resize:null};
+
+async function loadCampusMapPickerConfig(){
+  const status=document.getElementById('campus_map_tdt_status');
+  try{
+    const settings=await api('GET','/admin/settings');
+    CAMPUS_MAP_PICKER.key=(settings.find(x=>x.key==='tianditu_admin_web_key')?.value||'').trim();
+    document.getElementById('campus_map_tdt_key').value=CAMPUS_MAP_PICKER.key;
+    status.textContent=CAMPUS_MAP_PICKER.key?'Key 已加载':'尚未配置';
+    campusMapBindPicker();campusMapRenderPicker();
+  }catch(e){status.textContent='读取失败：'+e.message}
+}
+async function saveCampusMapTdtKey(){
+  const key=document.getElementById('campus_map_tdt_key').value.trim();
+  const status=document.getElementById('campus_map_tdt_status');
+  if(!key)return toast('请填写天地图 Web API Key',1);
+  status.textContent='保存中…';
+  try{await api('POST','/admin/settings',{key:'tianditu_admin_web_key',value:key});CAMPUS_MAP_PICKER.key=key;status.textContent='已保存';campusMapBindPicker();campusMapRenderPicker();toast('天地图 Key 已保存')}
+  catch(e){status.textContent='保存失败';toast(e.message,1)}
+}
+function campusMapWorld(lon,lat,zoom){
+  const scale=256*Math.pow(2,zoom),clamped=Math.max(-85.05112878,Math.min(85.05112878,lat));
+  const sin=Math.sin(clamped*Math.PI/180);
+  return {x:(lon+180)/360*scale,y:(.5-Math.log((1+sin)/(1-sin))/(4*Math.PI))*scale};
+}
+function campusMapLonLat(x,y,zoom){
+  const scale=256*Math.pow(2,zoom),n=Math.PI-2*Math.PI*y/scale;
+  return {lon:x/scale*360-180,lat:180/Math.PI*Math.atan(Math.sinh(n))};
+}
+function campusMapScreenPoint(clientX,clientY){
+  const el=document.getElementById('campus_map_picker'),rect=el.getBoundingClientRect(),center=campusMapWorld(CAMPUS_MAP_PICKER.lon,CAMPUS_MAP_PICKER.lat,CAMPUS_MAP_PICKER.zoom);
+  return campusMapLonLat(center.x+clientX-rect.left-rect.width/2,center.y+clientY-rect.top-rect.height/2,CAMPUS_MAP_PICKER.zoom);
+}
+function campusMapSelectPoint(point){
+  CAMPUS_MAP_PICKER.point={lon:point.lon,lat:point.lat};
+  document.getElementById('campus_place_lon').value=point.lon.toFixed(7);
+  document.getElementById('campus_place_lat').value=point.lat.toFixed(7);
+  document.getElementById('campus_place_crs').value='CGCS2000';
+  campusMapRenderPicker();
+}
+function campusMapUseInputPoint(){
+  const latRaw=document.getElementById('campus_place_lat')?.value.trim()||'',lonRaw=document.getElementById('campus_place_lon')?.value.trim()||'';
+  if(!latRaw||!lonRaw)return;
+  const lat=Number(latRaw),lon=Number(lonRaw);
+  if(!Number.isFinite(lat)||!Number.isFinite(lon)||lat<-85||lat>85||lon<-180||lon>180)return toast('经纬度格式无效',1);
+  CAMPUS_MAP_PICKER.lat=lat;CAMPUS_MAP_PICKER.lon=lon;CAMPUS_MAP_PICKER.point={lat,lon};CAMPUS_MAP_PICKER.zoom=Math.max(17,CAMPUS_MAP_PICKER.zoom);campusMapRenderPicker();
+}
+function campusMapMoveToCampus(){
+  const center=CAMPUS_MAP_CENTERS[document.getElementById('campus_place_campus')?.value]||CAMPUS_MAP_CENTERS.xiaoxiang;
+  CAMPUS_MAP_PICKER.lon=center[0];CAMPUS_MAP_PICKER.lat=center[1];CAMPUS_MAP_PICKER.zoom=17;campusMapRenderPicker();
+}
+function campusMapRenderTypes(selected=[]){
+  const category=document.getElementById('campus_place_category')?.value||'teaching_research',el=document.getElementById('campus_place_types');if(!el)return;
+  const chosen=new Set(selected);el.innerHTML=(CAMPUS_MAP_TYPES[category]||[]).map(x=>`<label style="display:flex;gap:6px;align-items:center;margin:0"><input type="checkbox" name="campus_place_type" value="${x[0]}" ${chosen.has(x[0])?'checked':''} style="width:auto">${x[1]}</label>`).join('');
+}
+function campusMapZoom(delta,clientX,clientY){
+  const next=Math.max(3,Math.min(18,CAMPUS_MAP_PICKER.zoom+delta));if(next===CAMPUS_MAP_PICKER.zoom)return;
+  const el=document.getElementById('campus_map_picker'),rect=el.getBoundingClientRect();
+  clientX=clientX??rect.left+rect.width/2;clientY=clientY??rect.top+rect.height/2;
+  const anchor=campusMapScreenPoint(clientX,clientY),offsetX=clientX-rect.left-rect.width/2,offsetY=clientY-rect.top-rect.height/2,world=campusMapWorld(anchor.lon,anchor.lat,next),center=campusMapLonLat(world.x-offsetX,world.y-offsetY,next);
+  CAMPUS_MAP_PICKER.zoom=next;CAMPUS_MAP_PICKER.lon=center.lon;CAMPUS_MAP_PICKER.lat=center.lat;campusMapRenderPicker();
+}
+function campusMapBindPicker(){
+  const el=document.getElementById('campus_map_picker');if(!el||el.dataset.bound)return;el.dataset.bound='1';
+  el.addEventListener('pointerdown',e=>{if(e.target.closest('button'))return;const c=campusMapWorld(CAMPUS_MAP_PICKER.lon,CAMPUS_MAP_PICKER.lat,CAMPUS_MAP_PICKER.zoom);CAMPUS_MAP_PICKER.drag={id:e.pointerId,x:e.clientX,y:e.clientY,cx:c.x,cy:c.y,moved:false};el.setPointerCapture(e.pointerId);el.classList.add('dragging')});
+  el.addEventListener('pointermove',e=>{const d=CAMPUS_MAP_PICKER.drag;if(!d||d.id!==e.pointerId)return;const dx=e.clientX-d.x,dy=e.clientY-d.y;if(Math.abs(dx)+Math.abs(dy)>5)d.moved=true;const c=campusMapLonLat(d.cx-dx,d.cy-dy,CAMPUS_MAP_PICKER.zoom);CAMPUS_MAP_PICKER.lon=c.lon;CAMPUS_MAP_PICKER.lat=c.lat;campusMapRenderPicker()});
+  const finish=e=>{const d=CAMPUS_MAP_PICKER.drag;if(!d||d.id!==e.pointerId)return;CAMPUS_MAP_PICKER.drag=null;el.classList.remove('dragging');if(!d.moved&&CAMPUS_MAP_PICKER.key)campusMapSelectPoint(campusMapScreenPoint(e.clientX,e.clientY))};
+  el.addEventListener('pointerup',finish);el.addEventListener('pointercancel',finish);
+  el.addEventListener('wheel',e=>{e.preventDefault();campusMapZoom(e.deltaY<0?1:-1,e.clientX,e.clientY)},{passive:false});
+  CAMPUS_MAP_PICKER.resize?.disconnect();CAMPUS_MAP_PICKER.resize=new ResizeObserver(()=>campusMapRenderPicker());CAMPUS_MAP_PICKER.resize.observe(el);
+}
+function campusMapTileURL(layer,x,y,z){
+  const host=Math.abs(x+y)%8,query='SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER='+layer+'&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILECOL='+x+'&TILEROW='+y+'&TILEMATRIX='+z+'&tk='+encodeURIComponent(CAMPUS_MAP_PICKER.key);
+  return 'https://t'+host+'.tianditu.gov.cn/'+layer+'_w/wmts?'+query;
+}
+function campusMapRenderPicker(){
+  const el=document.getElementById('campus_map_picker');if(!el)return;
+  const zoomLabel=document.getElementById('campus_map_picker_zoom');if(zoomLabel)zoomLabel.textContent='层级 '+CAMPUS_MAP_PICKER.zoom;
+  if(!CAMPUS_MAP_PICKER.key){el.innerHTML='<div class="map-picker-note">请先配置天地图 Key</div>';return}
+  const w=el.clientWidth,h=el.clientHeight,z=CAMPUS_MAP_PICKER.zoom,n=Math.pow(2,z),center=campusMapWorld(CAMPUS_MAP_PICKER.lon,CAMPUS_MAP_PICKER.lat,z),minX=Math.floor((center.x-w/2)/256),maxX=Math.floor((center.x+w/2)/256),minY=Math.max(0,Math.floor((center.y-h/2)/256)),maxY=Math.min(n-1,Math.floor((center.y+h/2)/256)),style=document.getElementById('campus_map_picker_style')?.value||'img',layers=style==='img'?['img','cia']:['vec','cva'];
+  let html='';
+  for(let layerIndex=0;layerIndex<layers.length;layerIndex++)for(let ty=minY;ty<=maxY;ty++)for(let tx=minX;tx<=maxX;tx++){const tileX=((tx%n)+n)%n,left=Math.round(tx*256-center.x+w/2),top=Math.round(ty*256-center.y+h/2);html+=`<img alt="" draggable="false" src="${campusMapTileURL(layers[layerIndex],tileX,ty,z)}" style="left:${left}px;top:${top}px;z-index:${layerIndex+1}">`}
+  if(CAMPUS_MAP_PICKER.point){const p=campusMapWorld(CAMPUS_MAP_PICKER.point.lon,CAMPUS_MAP_PICKER.point.lat,z),left=p.x-center.x+w/2,top=p.y-center.y+h/2;html+=`<div class="map-picker-marker" style="left:${left}px;top:${top}px"></div>`}
+  html+='<div class="map-picker-note">单击选点</div><div class="map-picker-zoom"><button type="button" onclick="campusMapZoom(1)">+</button><button type="button" onclick="campusMapZoom(-1)">−</button></div><div class="map-picker-credit">地图数据 © 天地图</div>';el.innerHTML=html;
+}
+RENDER['campus-map']=async()=>{
+  const el=document.getElementById('p-campus-map');
+  CAMPUS_MAP_REVIEW_ID=0;
+  CAMPUS_MAP_PICKER.point=null;CAMPUS_MAP_PICKER.lon=CAMPUS_MAP_CENTERS.xiaoxiang[0];CAMPUS_MAP_PICKER.lat=CAMPUS_MAP_CENTERS.xiaoxiang[1];CAMPUS_MAP_PICKER.zoom=17;
+  el.innerHTML=`<h2 class="title">校园地图地点</h2>
+    <div class="card"><div class="row"><h3 style="margin:0;flex:1">突发事件配置</h3><button class="sm ghost" onclick="loadCampusIncidentPolicy()">刷新</button><button class="sm" onclick="saveCampusIncidentPolicy()">保存配置</button></div><p class="muted">配置由服务端执行，App 每日缓存；总开关会随事件列表请求即时生效。时效变更只影响新事件。</p>
+      <div class="formgrid"><div><label style="display:flex;gap:8px;align-items:center"><input id="incident_enabled" type="checkbox" style="width:auto">启用突发事件</label></div><div><label>归类及显示半径（米）</label><input id="incident_radius" type="number" min="10" max="200"></div></div>
+      <div style="overflow-x:auto"><table><thead><tr><th>类型</th><th>启用</th><th>基础时效（分钟）</th><th>超时效提示</th><th>点亮续期</th><th>最大时长</th></tr></thead><tbody>${Object.entries(CAMPUS_INCIDENT_TYPES).map(([k,v])=>`<tr><td>${v}</td><td><input id="incident_${k}_enabled" type="checkbox" style="width:auto"></td><td><input id="incident_${k}_ttl" type="number" min="5" max="360"></td><td>${k==='traffic_enforcement'?`<input id="incident_${k}_stale" type="number" min="10" max="180">`:'-'}</td><td>${k==='traffic_enforcement'?`<input id="incident_${k}_relight" type="number" min="5" max="120">`:'-'}</td><td>${k==='traffic_enforcement'?`<input id="incident_${k}_max" type="number" min="30" max="720">`:'与基础时效相同'}</td></tr>`).join('')}</tbody></table></div></div>
+    <div class="card"><div class="row"><h3 style="margin:0;flex:1">突发事件记录</h3><button class="sm ghost" onclick="loadCampusIncidents()">刷新</button></div><p class="muted">事件无需审核；这里只用于查看状态及在必要时强制撤销。</p><div style="overflow-x:auto"><table><thead><tr><th>ID / 类型</th><th>位置</th><th>上报 / 确认</th><th>创建 / 过期</th><th>状态</th><th>操作</th></tr></thead><tbody id="campus_incident_rows"><tr><td colspan="6" class="muted">加载中…</td></tr></tbody></table></div></div>
+    <div class="card"><h3>天地图服务</h3><p class="muted">填写天地图 Web 端 Key 后即可在下方地图直接选点。Key 保存在服务端配置中，不写入源码；请在天地图控制台限制可用域名。</p>
+      <div class="row" style="margin-top:10px"><input id="campus_map_tdt_key" placeholder="天地图 Web API Key" autocomplete="off" style="flex:1;min-width:220px"><button onclick="saveCampusMapTdtKey()">保存 Key</button><span class="muted" id="campus_map_tdt_status">读取配置中…</span></div></div>
+    <div class="card"><h3>新增 / 编辑正式地点</h3><p class="muted" id="campus_place_review_context"></p><input id="campus_place_id" type="hidden" value="0">
+      <div class="formgrid"><div><label>校区</label><select id="campus_place_campus" onchange="campusMapMoveToCampus()">${CAMPUS_MAP_CAMPUSES.map(x=>`<option value="${x[0]}">${x[1]}</option>`).join('')}</select></div><div><label>一级分类（必选）</label><select id="campus_place_category" onchange="campusMapRenderTypes()">${CAMPUS_MAP_CATEGORIES.map(x=>`<option value="${x[0]}">${x[1]}</option>`).join('')}</select></div></div>
+      <label>二级类型（可多选）</label><div id="campus_place_types" class="row" style="gap:12px;padding:10px 0;align-items:center"></div>
+      <div class="formgrid"><div><label>地点名称</label><input id="campus_place_name" maxlength="120"></div><div><label>别名（英文逗号分隔）</label><input id="campus_place_aliases"></div></div>
+      <div class="formgrid"><div><label>纬度</label><input id="campus_place_lat" type="number" step="any" placeholder="28.1531" onchange="campusMapUseInputPoint()"></div><div><label>经度</label><input id="campus_place_lon" type="number" step="any" placeholder="112.9390" onchange="campusMapUseInputPoint()"></div></div>
+      <div class="formgrid"><div><label>坐标系</label><select id="campus_place_crs"><option value="CGCS2000">CGCS2000</option><option value="WGS84">WGS84</option></select></div><div><label>排序（越大越靠前）</label><input id="campus_place_sort" type="number" value="0"></div></div>
+      <label>地址</label><input id="campus_place_address" maxlength="500"><label>描述</label><textarea id="campus_place_description" maxlength="4000"></textarea>
+      <div class="row" style="margin-top:12px"><label style="display:flex;gap:8px;align-items:center;margin:0"><input id="campus_place_active" type="checkbox" checked style="width:auto">立即上线</label><button id="campus_place_save" onclick="saveCampusMapPlace()">保存地点</button><button class="ghost" onclick="resetCampusMapPlace()">清空</button><button class="ghost" onclick="campusMapUseInputPoint()">定位到输入坐标</button></div>
+      <div class="row" style="margin:14px 0 8px"><span class="muted" style="flex:1">单击地图选点；拖动地图或滚轮缩放后可继续微调。</span><select id="campus_map_picker_style" onchange="campusMapRenderPicker()" style="width:auto"><option value="img">卫星图</option><option value="vec">平面图</option></select><span class="muted" id="campus_map_picker_zoom"></span></div>
+      <div id="campus_map_picker" class="map-picker"><div class="map-picker-note">请先配置天地图 Key</div></div></div>
+    <div class="card"><div class="row"><h3 style="margin:0;flex:1">用户上报复核</h3><select id="campus_contribution_filter" onchange="loadCampusMapContributions()" style="width:auto"><option value="pending">待审核</option><option value="">全部</option><option value="approved">已通过</option><option value="rejected">已拒绝</option></select><button class="sm ghost" onclick="loadCampusMapContributions()">刷新</button></div><p class="muted">新增地点通过后会自动加入正式地点并更新地图版本；纠错请先载入对应地点完成修改，再通过该上报。</p><div style="overflow-x:auto"><table><thead><tr><th>ID / 用户</th><th>类型</th><th>内容</th><th>时间</th><th>状态</th><th>操作</th></tr></thead><tbody id="campus_contribution_rows"><tr><td colspan="6" class="muted">加载中…</td></tr></tbody></table></div></div>
+    <div class="card"><div class="row"><h3 style="margin:0;flex:1">正式地点</h3><select id="campus_place_filter" onchange="loadCampusMapPlaces()" style="width:auto"><option value="">全部校区</option>${CAMPUS_MAP_CAMPUSES.map(x=>`<option value="${x[0]}">${x[1]}</option>`).join('')}</select><button class="sm ghost" onclick="loadCampusMapPlaces()">刷新</button></div><div style="overflow-x:auto"><table><thead><tr><th>ID</th><th>校区 / 名称</th><th>类型</th><th>坐标</th><th>排序</th><th>状态</th><th>操作</th></tr></thead><tbody id="campus_place_rows"><tr><td colspan="7" class="muted">加载中…</td></tr></tbody></table></div></div>`;
+  campusMapRenderTypes();await Promise.all([loadCampusIncidentPolicy(),loadCampusIncidents(),loadCampusMapPlaces(),loadCampusMapContributions(),loadCampusMapPickerConfig()]);
+};
+async function loadCampusIncidentPolicy(){
+  try{const p=await api('GET','/admin/campus-map/incidents/policy');incident_enabled.checked=p.enabled!==false;incident_radius.value=p.merge_radius_m;for(const k of Object.keys(CAMPUS_INCIDENT_TYPES)){const x=p.types?.[k]||{};document.getElementById(`incident_${k}_enabled`).checked=x.enabled!==false;document.getElementById(`incident_${k}_ttl`).value=x.ttl_minutes||'';if(k==='traffic_enforcement'){document.getElementById(`incident_${k}_stale`).value=x.stale_minutes||'';document.getElementById(`incident_${k}_relight`).value=x.relight_minutes||'';document.getElementById(`incident_${k}_max`).value=x.max_minutes||''}}}catch(e){toast(e.message,1)}
+}
+async function saveCampusIncidentPolicy(){
+  const values={campus_incidents_enabled:String(incident_enabled.checked),campus_incidents_merge_radius_m:incident_radius.value};
+  for(const k of Object.keys(CAMPUS_INCIDENT_TYPES)){values[`campus_incidents_${k}_enabled`]=String(document.getElementById(`incident_${k}_enabled`).checked);values[`campus_incidents_${k}_ttl_minutes`]=document.getElementById(`incident_${k}_ttl`).value}
+  values.campus_incidents_traffic_enforcement_stale_minutes=incident_traffic_enforcement_stale.value;values.campus_incidents_traffic_enforcement_relight_minutes=incident_traffic_enforcement_relight.value;values.campus_incidents_traffic_enforcement_max_minutes=incident_traffic_enforcement_max.value;
+  try{await Promise.all(Object.entries(values).map(([key,value])=>api('POST','/admin/campus-map/incidents/policy',{key,value})));toast('突发事件配置已保存');loadCampusIncidentPolicy()}catch(e){toast(e.message,1)}
+}
+async function loadCampusIncidents(){
+  const body=document.getElementById('campus_incident_rows');if(!body)return;
+  try{const rows=await api('GET','/admin/campus-map/incidents');body.innerHTML=rows.map(x=>`<tr><td>#${x.id}<br><b>${esc(CAMPUS_INCIDENT_TYPES[x.type]||x.type)}</b></td><td style="font-family:monospace">${Number(x.longitude).toFixed(7)}, ${Number(x.latitude).toFixed(7)}<br><span class="muted">半径 ${x.display_radius_m}m</span></td><td>上报 ${x.report_count}<br><span class="muted">仍在 ${x.confirm_count} · 未发现 ${x.reject_count}</span></td><td>${fmtTime(x.created_at)}<br><span class="muted">${fmtTime(x.expires_at)}</span></td><td><span class="badge ${x.status==='active'?'ok':'warn'}">${x.status==='active'?'展示中':x.status==='withdrawn'?'用户已撤销':x.status==='admin_removed'?'管理员已撤销':'已过期'}</span></td><td>${x.status==='active'?`<button class="sm danger" onclick="removeCampusIncident(${x.id})">强制撤销</button>`:'-'}</td></tr>`).join('')||'<tr><td colspan="6" class="muted">暂无事件</td></tr>'}catch(e){body.innerHTML='<tr><td colspan="6" class="muted">'+esc(e.message)+'</td></tr>'}
+}
+async function removeCampusIncident(id){const reason=prompt('请输入强制撤销原因：','');if(!reason?.trim())return;try{await api('POST','/admin/campus-map/incidents/remove',{id,reason:reason.trim()});toast('事件已撤销');loadCampusIncidents()}catch(e){toast(e.message,1)}}
+function campusMapLabel(items,value){return items.find(x=>x[0]===value)?.[1]||value}
+function campusMapTypeLabel(category,value){return campusMapLabel(CAMPUS_MAP_TYPES[category]||[],value)}
+async function loadCampusMapPlaces(){
+  const body=document.getElementById('campus_place_rows');if(!body)return;
+  const campus=document.getElementById('campus_place_filter')?.value||'';
+  try{CAMPUS_MAP_PLACES=await api('GET','/admin/campus-map/places'+(campus?'?campus_id='+encodeURIComponent(campus):''));body.innerHTML=CAMPUS_MAP_PLACES.map(x=>`<tr><td>${x.id}</td><td><span class="muted">${esc(campusMapLabel(CAMPUS_MAP_CAMPUSES,x.campus_id))}</span><br><b>${esc(x.name)}</b></td><td>${esc(campusMapLabel(CAMPUS_MAP_CATEGORIES,x.category))}<br><span class="muted">${esc((x.types||[]).map(t=>campusMapTypeLabel(x.category,t)).join('、'))}</span></td><td style="font-family:monospace">${Number(x.longitude).toFixed(7)}, ${Number(x.latitude).toFixed(7)}<br><span class="muted">${esc(x.coordinate_system)}</span></td><td>${x.sort||0}</td><td><span class="badge ${x.active?'ok':'warn'}">${x.active?'已上线':'已下线'}</span></td><td><button class="sm" onclick="editCampusMapPlace(${x.id})">编辑</button> ${x.active?`<button class="sm danger" onclick="deactivateCampusMapPlace(${x.id})">下线</button>`:''}</td></tr>`).join('')||'<tr><td colspan="7" class="muted">暂无正式地点</td></tr>'}catch(e){body.innerHTML='<tr><td colspan="7" class="muted">'+esc(e.message)+'</td></tr>'}
+}
+function fillCampusMapPlaceForm(x){campus_place_id.value=x.id||0;campus_place_campus.value=x.campus_id;campus_place_category.value=x.category;campusMapRenderTypes(x.types||[]);campus_place_name.value=x.name||'';campus_place_aliases.value=(x.aliases||[]).join(',');campus_place_lat.value=x.latitude;campus_place_lon.value=x.longitude;campus_place_crs.value=x.coordinate_system||'CGCS2000';campus_place_sort.value=x.sort||0;campus_place_address.value=x.address||'';campus_place_description.value=x.description||'';campus_place_active.checked=x.active!==false;campusMapUseInputPoint();window.scrollTo({top:0,behavior:'smooth'})}
+function setCampusMapReviewContext(id){CAMPUS_MAP_REVIEW_ID=id||0;const hint=document.getElementById('campus_place_review_context'),button=document.getElementById('campus_place_save');if(hint)hint.textContent=id?`正在编辑待审上报 #${id}；保存后将同时通过审核并发布。`:'';if(button)button.textContent=id?'编辑后通过并发布':'保存地点'}
+function editCampusMapPlace(id){const x=CAMPUS_MAP_PLACES.find(p=>p.id===id);if(!x)return;setCampusMapReviewContext(0);fillCampusMapPlaceForm(x)}
+function resetCampusMapPlace(preserveContext=false){setCampusMapReviewContext(0);campus_place_id.value=0;campus_place_name.value='';campus_place_aliases.value='';campus_place_lat.value='';campus_place_lon.value='';campus_place_address.value='';campus_place_description.value='';CAMPUS_MAP_PICKER.point=null;if(preserveContext){campusMapRenderPicker();return}campus_place_campus.value='xiaoxiang';campus_place_category.value='teaching_research';campusMapRenderTypes();campus_place_crs.value='CGCS2000';campus_place_sort.value=0;campus_place_active.checked=true;campusMapMoveToCampus()}
+async function saveCampusMapPlace(){const lat=campus_place_lat.value.trim(),lon=campus_place_lon.value.trim();if(!lat||!lon)return toast('请先在地图选点或填写经纬度',1);const body={id:+campus_place_id.value,campus_id:campus_place_campus.value,name:campus_place_name.value.trim(),latitude:+lat,longitude:+lon,coordinate_system:campus_place_crs.value,category:campus_place_category.value,types:Array.from(document.querySelectorAll('#campus_place_types input[name="campus_place_type"]:checked')).map(x=>x.value),address:campus_place_address.value.trim(),description:campus_place_description.value.trim(),aliases:campus_place_aliases.value.split(/[,，]/).map(x=>x.trim()).filter(Boolean),sort:+campus_place_sort.value,active:campus_place_active.checked};try{if(CAMPUS_MAP_REVIEW_ID){const note=prompt('确认以当前编辑后的内容通过审核并发布。可填写审核备注：','');if(note===null)return;body.id=0;body.active=true;await api('POST','/admin/campus-map/contributions/review',{id:CAMPUS_MAP_REVIEW_ID,decision:'approved',review_note:note.trim(),proposed_place:body});toast('上报已按编辑内容通过并发布');resetCampusMapPlace(true);await Promise.all([loadCampusMapContributions(),loadCampusMapPlaces()]);return}await api('POST','/admin/campus-map/places',body);toast('校园地点已保存，可继续在当前区域添加');resetCampusMapPlace(true);loadCampusMapPlaces()}catch(e){toast(e.message,1)}}
+async function deactivateCampusMapPlace(id){if(!confirm('确认下线该地点？App 刷新后将不再展示。'))return;try{await api('DELETE','/admin/campus-map/places?id='+id);toast('地点已下线');loadCampusMapPlaces()}catch(e){toast(e.message,1)}}
+async function loadCampusMapContributions(){
+  const body=document.getElementById('campus_contribution_rows');if(!body)return;
+  const status=document.getElementById('campus_contribution_filter')?.value||'';
+  try{CAMPUS_MAP_CONTRIBUTIONS=await api('GET','/admin/campus-map/contributions'+(status?'?status='+encodeURIComponent(status):''));body.innerHTML=CAMPUS_MAP_CONTRIBUTIONS.map(x=>{const p=x.proposed_place,content=x.kind==='new_place'&&p?`<b>${esc(p.name)}</b><br>${esc(campusMapLabel(CAMPUS_MAP_CAMPUSES,p.campus_id))} · ${esc(campusMapLabel(CAMPUS_MAP_CATEGORIES,p.category))}<br><span class="muted">${Number(p.longitude).toFixed(7)}, ${Number(p.latitude).toFixed(7)}</span>${(p.aliases||[]).length?'<br><span class="muted">别名：'+esc(p.aliases.join('、'))+'</span>':''}${p.description?'<br>'+esc(p.description):''}${x.message?'<br>'+esc(x.message):''}`:`地点 #${x.place_id}<br>${esc(x.message)}`;const actions=x.status==='pending'?`${x.kind==='new_place'?`<button class="sm ghost" onclick="viewContributionPlace(${x.id})">地图查看</button> <button class="sm" onclick="editContributionPlace(${x.id})">编辑后发布</button> `:`<button class="sm ghost" onclick="loadContributionPlace(${x.place_id})">载入地点</button> `}<button class="sm" onclick="reviewCampusMapContribution(${x.id},'approved')">直接通过</button> <button class="sm danger" onclick="reviewCampusMapContribution(${x.id},'rejected')">拒绝</button>`:'-';const history=`待审 ${x.user_pending_count||0} · 通过 ${x.user_approved_count||0} · 拒绝 ${x.user_rejected_count||0}`;return `<tr><td>#${x.id}<br><span class="muted">用户 ${x.user_id} ${esc(x.user_nickname||'')}<br>${history}${(x.corroboration_count||0)>1?' · '+x.corroboration_count+' 人佐证':''}</span></td><td>${x.kind==='new_place'?'新增地点':'地点纠错'}</td><td>${content}</td><td>${fmtTime(x.created_at)}</td><td><span class="badge ${x.status==='approved'?'ok':x.status==='pending'?'warn':''}">${x.status==='pending'?'待审核':x.status==='approved'?'已通过':'已拒绝'}</span>${x.review_note?'<br><span class="muted">'+esc(x.review_note)+'</span>':''}</td><td>${actions}</td></tr>`}).join('')||'<tr><td colspan="6" class="muted">暂无上报</td></tr>'}catch(e){body.innerHTML='<tr><td colspan="6" class="muted">'+esc(e.message)+'</td></tr>'}
+}
+function loadContributionPlace(id){const place=CAMPUS_MAP_PLACES.find(x=>x.id===id);if(!place)return toast('正式地点列表中找不到该地点，请刷新后重试',1);editCampusMapPlace(id)}
+function viewContributionPlace(id){const x=CAMPUS_MAP_CONTRIBUTIONS.find(item=>item.id===id),p=x?.proposed_place;if(!p)return toast('上报中没有可查看的地点信息',1);campus_place_campus.value=p.campus_id;campus_place_lat.value=p.latitude;campus_place_lon.value=p.longitude;campusMapUseInputPoint();document.getElementById('campus_map_picker')?.scrollIntoView({behavior:'smooth',block:'center'})}
+function editContributionPlace(id){const x=CAMPUS_MAP_CONTRIBUTIONS.find(item=>item.id===id),p=x?.proposed_place;if(!p)return toast('上报中没有可编辑的地点信息',1);fillCampusMapPlaceForm({...p,id:0,active:true});setCampusMapReviewContext(id)}
+async function reviewCampusMapContribution(id,decision){const action=decision==='approved'?'通过':'拒绝',note=prompt(action+'该上报。可填写审核备注：','');if(note===null)return;try{await api('POST','/admin/campus-map/contributions/review',{id,decision,review_note:note.trim()});toast('已'+action);await Promise.all([loadCampusMapContributions(),loadCampusMapPlaces()])}catch(e){toast(e.message,1)}}
+
+// --- 空教室离线数据 ---
+RENDER.classroom=async()=>{
+  const el=document.getElementById('p-classroom');
+  el.innerHTML=`<h2 class="title">空教室数据</h2>
+    <div class="card"><h3>发布学期 SQLite 包</h3><p class="muted">先在本机将 CSV 构建为 SQLite，再手工上传到 R2。这里粘贴公开 HTTPS 地址后，服务端会重新下载并计算 SHA-256 与文件大小；不接受手填摘要。</p>
+      <div class="formgrid"><div><label>学期 ID</label><input id="classroom_term" value="2026-2027-1" placeholder="2026-2027-1"></div><div><label>显示名称</label><input id="classroom_name" value="2026-2027年度 第一学期"></div><div><label>第一周周一</label><input id="classroom_monday" type="date" value="2026-09-07"></div><div><label>总周数</label><input id="classroom_weeks" type="number" min="1" max="32" value="20"></div></div>
+      <label>R2 公共 HTTPS URL</label><input id="classroom_url" placeholder="https://.../classroom_2026-2027-1.sqlite">
+      <div class="row" style="margin-top:12px"><button onclick="publishClassroomData()">验证并发布</button><span class="muted" id="classroom_result"></span></div></div>
+    <div class="card"><div class="row"><h3 style="margin:0;flex:1">已登记版本</h3><button class="sm ghost" onclick="loadClassroomData()">刷新</button></div><div style="overflow-x:auto"><table><thead><tr><th>学期</th><th>起始 / 周数</th><th>文件</th><th>SHA-256</th><th>验证时间</th><th>状态</th><th>操作</th></tr></thead><tbody id="classroom_rows"><tr><td colspan="7" class="muted">加载中…</td></tr></tbody></table></div></div>`;
+  loadClassroomData();
+};
+async function loadClassroomData(){
+  const body=document.getElementById('classroom_rows'); if(!body)return;
+  try{const rows=await api('GET','/admin/classroom-data');body.innerHTML=rows.map(x=>`<tr><td><b>${esc(x.term_id)}</b><br><span class="muted">${esc(x.display_name||'-')}</span></td><td>${esc(String(x.first_monday||'').slice(0,10))}<br>${x.total_weeks} 周</td><td><a href="${esc(x.url)}" target="_blank" rel="noopener">R2 数据包</a><br><span class="muted">${Number(x.size_bytes||0).toLocaleString()} bytes</span></td><td style="font-family:monospace;font-size:11px">${esc(x.sha256)}</td><td>${fmtTime(x.verified_at)}</td><td><span class="badge ${x.active?'ok':'warn'}">${x.active?'已发布':'已归档'}</span></td><td>${x.active?`<button class="sm danger" onclick="archiveClassroomData('${esc(x.term_id)}')">归档</button>`:'-'}</td></tr>`).join('')||'<tr><td colspan="7" class="muted">暂无已发布数据</td></tr>'}catch(e){body.innerHTML='<tr><td colspan="7" class="muted">'+esc(e.message)+'</td></tr>'}
+}
+async function publishClassroomData(){
+  const result=document.getElementById('classroom_result');result.textContent='服务端校验中…';
+  const body={term_id:document.getElementById('classroom_term').value.trim(),display_name:document.getElementById('classroom_name').value.trim(),first_monday:document.getElementById('classroom_monday').value,total_weeks:+document.getElementById('classroom_weeks').value,url:document.getElementById('classroom_url').value.trim()};
+  try{const item=await api('POST','/admin/classroom-data',body);result.textContent='已验证：'+item.sha256+' · '+Number(item.size_bytes).toLocaleString()+' bytes';toast('空教室数据已发布');loadClassroomData()}catch(e){result.textContent='';toast(e.message,1)}
+}
+async function archiveClassroomData(term){if(!confirm('确认归档 '+term+'？App 将不再收到该学期。'))return;try{await api('DELETE','/admin/classroom-data?term_id='+encodeURIComponent(term));toast('已归档');loadClassroomData()}catch(e){toast(e.message,1)}}
+
+</script>
+</body>
+</html>
