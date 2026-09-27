@@ -173,12 +173,10 @@ func (s *Server) handleAdminV1SetRoles(w http.ResponseWriter, r *http.Request) {
 		v1Error(w, r, http.StatusBadRequest, "VALIDATION_ERROR", "管理员或角色无效")
 		return
 	}
-	if err := s.adminAccounts.SetRoles(r.Context(), request.AdminID, request.Roles); err != nil {
-		v1Error(w, r, http.StatusBadRequest, "ROLE_UPDATE_FAILED", "角色更新失败")
+	if err := s.adminAccounts.AssignRoles(r.Context(), adminPrincipalFrom(r).ID, request.AdminID, request.Roles); err != nil {
+		adminManagementError(w, r, err)
 		return
 	}
-	principal := adminPrincipalFrom(r)
-	_ = s.adminAccounts.RecordAudit(r.Context(), principal, "admin.roles.update", "admin_user", strconv.FormatInt(request.AdminID, 10), chimiddleware.GetReqID(r.Context()), clientIP(r), r.UserAgent(), http.StatusOK)
 	v1Data(w, r, http.StatusOK, map[string]any{"admin_id": request.AdminID, "roles": request.Roles})
 }
 

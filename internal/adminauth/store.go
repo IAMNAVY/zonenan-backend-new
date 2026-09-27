@@ -287,31 +287,4 @@ func (s *Store) ListRoles(ctx context.Context) ([]map[string]any, error) {
 	return out, rows.Err()
 }
 
-func (s *Store) SetRoles(ctx context.Context, adminID int64, roles []string) error {
-	if len(roles) == 0 {
-		return errors.New("at least one role is required")
-	}
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx)
-	var valid int
-	if err := tx.QueryRow(ctx, `SELECT COUNT(*) FROM admin_roles WHERE role_key=ANY($1)`, roles).Scan(&valid); err != nil {
-		return err
-	}
-	if valid != len(roles) {
-		return errors.New("unknown role")
-	}
-	if _, err := tx.Exec(ctx, `DELETE FROM admin_user_roles WHERE admin_user_id=$1`, adminID); err != nil {
-		return err
-	}
-	for _, role := range roles {
-		if _, err := tx.Exec(ctx, `INSERT INTO admin_user_roles(admin_user_id,role_key) VALUES($1,$2)`, adminID, role); err != nil {
-			return err
-		}
-	}
-	return tx.Commit(ctx)
-}
-
 func IsNoRows(err error) bool { return errors.Is(err, pgx.ErrNoRows) }

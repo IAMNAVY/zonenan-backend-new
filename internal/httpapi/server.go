@@ -306,6 +306,10 @@ func (s *Server) Router() http.Handler {
 			r.With(requireAdminPermission("audit.read")).Get("/audit-logs", s.handleAdminV1Audit)
 			r.With(requireAdminPermission("admin.read")).Get("/admins", s.handleAdminV1Admins)
 			r.With(requireAdminPermission("admin.read")).Get("/roles", s.handleAdminV1Roles)
+			r.With(requireAdminPermission("admin.read")).Get("/permissions", s.handleAdminV1Permissions)
+			r.With(requireAdminPermission("admin.manage")).Post("/admins", s.handleAdminV1CreateAdmin)
+			r.With(requireAdminPermission("admin.manage")).Post("/roles", s.handleAdminV1SaveRole)
+			r.With(requireAdminPermission("admin.manage")).Put("/roles", s.handleAdminV1SaveRole)
 			r.With(requireAdminPermission("admin.manage")).Put("/admins/roles", s.handleAdminV1SetRoles)
 			mount := func(method, path, permission string, handler http.HandlerFunc) {
 				r.With(requireAdminPermission(permission)).Method(method, path, s.wrapAdminV1(method, path, handler))
