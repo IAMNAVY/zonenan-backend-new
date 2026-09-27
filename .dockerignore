@@ -1,0 +1,11 @@
+.git
+.env
+.env.*
+*.dump
+*.tar.gz
+.admin-bootstrap-credentials
+backups
+data
+tmp
+*.log
+*.exe

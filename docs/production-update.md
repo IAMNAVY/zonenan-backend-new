@@ -1,80 +1,66 @@
-# 生产更新、改密与旧后台下线
+# ZoneNaN 生产维护
 
-本次代码只在本地修改和测试，尚未提交、推送或更新到生产。GitHub Deploy Key 为只读。
+## 唯一入口
 
-## 三个独立仓库
+服务器只使用 `~/zonenan-backend-new/compose.yml` 管理 db、backend、worker、admin、merchant、website。
+三个源码仓库分别是 `~/zonenan-backend-new`、`~/zonenan-admin`、`~/zonenan-merchant`，均使用对应只读 Deploy Key。
+官网静态文件保持在 `~/zonenan-website`。
+旧项目目录归档在备份目录，不再作为运行依赖。
 
-| 本地提交目录 | GitHub 仓库 | 服务器拉取目录 |
-| --- | --- | --- |
-| `backend/` | `IAMNAVY/zonenan-backend-new` | `/root/zonenan-backend-new` |
-| `admin-web/` | `IAMNAVY/zonenan-admin` | `/root/zonenan-admin` |
-| `merchant-web/` | `IAMNAVY/zonenan-merchant` | `/root/zonenan-merchant` |
+- `panel.zonenan.pro` → Cloudflare Tunnel → `http://zonenan-admin:80`
+- `merchant.zonenan.pro` → Cloudflare Tunnel → `http://zonenan-merchant:80`
+- `www.zonenan.pro` → Cloudflare Tunnel → `http://zonenan-nginx:80`（官网及 API）
+- 内部反代统一 `app:8080`。数据库不发布公网端口。
 
-不要只提交外层项目：Go 后端、Admin、Merchant 都有各自的 `.git`。三处分别检查 diff、提交、推送。
-服务器三处 origin/main 已关联，并配置各自 `core.sshCommand`，无需复制令牌。
-外层 `/root/zonenan-backend-new/.env` 是生产配置，不能上传 GitHub，不能用 `.env.example` 覆盖。
+生产密码等配置只放在后端目录的 `.env`，不要上传 Git。本地和服务器的版本化配置文件保持相同，秘密值按环境分别提供。
+`current` 是 Docker 镜像版本标签，不是端口。实际本机诊断端口：后端 18088，Admin 13000，Merchant 13001。
 
-## 第一次拉取
+## 日常使用
 
-Admin、Merchant 服务器当前各有一处部署时修改的 `nginx.conf`。先保存这些改动；stash 不要 pop，因为此次已将相应媒体代理和 `app:8080` 配置纳入新源码。
-
-```bash
-git -C /root/zonenan-admin diff -- nginx.conf
-git -C /root/zonenan-merchant diff -- nginx.conf
-git -C /root/zonenan-admin stash push -m before-first-github-update -- nginx.conf
-git -C /root/zonenan-merchant stash push -m before-first-github-update -- nginx.conf
-```
-
-以后工作区干净时不需要再次 stash。若有其他改动先检查，不使用 `reset --hard` 或 `git clean`。
-
-你推送完成后，服务器执行：
+你在本地三个独立仓库分别提交、推送后，服务器只需：
 
 ```bash
-git -C /root/zonenan-backend-new pull --ff-only
-git -C /root/zonenan-admin pull --ff-only
-git -C /root/zonenan-merchant pull --ff-only
+cd ~/zonenan-backend-new
+bash manage.sh update
 ```
 
-## 构建与重启
-
-以下命令请在 Bash 中按顺序执行。任一步失败先处理，不继续切换。
-只 `docker restart` 不会载入新源码，必须先构建镜像再重建容器。
-单实例后端重建存在短暂中断，建议选低峰期；这不是零停机发布。
+脚本依次拉取三个仓库、先构建镜像、记录回滚标签、更新容器、检查后端健康、刷新代理解析。
+首次配置已部署但尚未发布到 Git 时，先提交并推送本地三个仓库的配置和说明。脚本仅在服务器所有已发布文件与 origin/main 完全相同时同步 Git 元数据，保留工作文件；有任何不一致就停止，不会 stash 或覆盖改动。正常更新只允许 main 分支快进。
+单实例更新会有短暂重启，请选低峰期。脚本不执行数据库回滚；未来有 schema 变更时必须先按该版本说明备份迁移。
 
 ```bash
-set -e
-cd /root/zonenan-backend-new
-release_stamp=$(date +%Y%m%d-%H%M%S)
-docker tag "$(docker inspect -f '{{.Image}}' zonenan-backend-new)" "zonenan-backend-new:rollback-$release_stamp"
-docker tag "$(docker inspect -f '{{.Image}}' zonenan-admin)" "zonenan-admin:rollback-$release_stamp"
-docker tag "$(docker inspect -f '{{.Image}}' zonenan-merchant)" "zonenan-merchant:rollback-$release_stamp"
-echo "回滚镜像标记：rollback-$release_stamp"
-
-docker build -t zonenan-backend-new:phase8 /root/zonenan-backend-new
-docker build -t zonenan-admin:phase8 /root/zonenan-admin
-docker build -t zonenan-merchant:phase8 /root/zonenan-merchant
-
-docker compose -f deploy/compose.server.yml config --quiet
-# 本次改密及旧接口下线不新增 migration。
-# 以后版本如有数据库变更，先备份，并按对应版本迁移文档执行 migrate。
-docker compose -f deploy/compose.server.yml up -d
-
-curl --fail --retry 15 --retry-connrefused --retry-delay 1 http://127.0.0.1:18088/healthz
-docker exec zonenan-admin nginx -t
-docker exec zonenan-admin nginx -s reload
-docker exec zonenan-merchant nginx -t
-docker exec zonenan-merchant nginx -s reload
-docker exec zonenan-nginx nginx -t
-docker exec zonenan-nginx nginx -s reload
-docker exec zonenan-backend-caddy-1 caddy reload --config /etc/caddy/Caddyfile
-docker compose -f deploy/compose.server.yml ps
+bash manage.sh status
+bash manage.sh logs backend
+bash manage.sh logs db
+bash manage.sh logs worker
+# 已拉取代码或只更新了 .env：
+bash manage.sh apply
+# 使用更新时打印的真实标签：
+bash manage.sh rollback rollback-YYYYMMDD-HHMMSS
 ```
 
-重载代理用于刷新 Docker 容器 IP。不要启动旧 `zonenan-backend-app-1`，否则会与新后端的 `app` 别名冲突。
-不要执行旧项目的整体 `docker compose up` / `down`，旧项目仍承载数据库和 Caddy。
-`www.zonenan.pro -> http://zonenan-nginx:80` 不变，官网首页仍使用现有静态文件。
+不要只 `docker restart` 来发布源码：它不会重新构建镜像。
+不再使用旧项目 Compose、`deploy/compose.server.yml` 或 `phase8` 发布命令。
 
-## 验收与修改密码
+## 数据与备份
+
+数据库由新项目的 `db` 服务管理，容器名 `zonenan-db`。
+现有数据卷原位接管：`zonenan-backend_db_data`、`zonenan-backend_map_tile_cache`、`zonenan_v2_uploads`。
+名称只是已有存储标识，保留名称可避免复制时遗漏最新写入；它们不依赖旧代码目录、旧 Compose 或旧网络。
+绝不能因为卷名含旧前缀就删除：这些是当前生产数据。
+
+接管前备份、旧环境归档保存在 `/root/backups/zonenan/`。归档只是恢复材料，不是第二套需要日常维护的服务。
+数据库版本固定到接管时已在运行的 PostGIS 镜像 digest，避免此次顺带升级 PostgreSQL。
+
+## 修改管理员密码与接口下线
+
+新 Admin 侧边栏底部“修改密码”：原密码、新密码、再次确认。新密码为 12–72 字节，不能与原密码相同。
+成功后所有旧 Session 失效，重新登录。密码修改、会话撤销和审计在同一事务中执行。
+初始凭据文件只记载首次密码；已有账号不能通过修改 ADMIN_BOOTSTRAP_* 重置。
+本次不包含修改邮箱或重置其他管理员密码。
+
+`/panel`、`/admin/*` 已在新代码中返回 410；旧 ADMIN_SECRET 无法绕过。
+`/admin-api/v1/*` 和 App 的认证、成绩、会员、地图、分析、回调等业务接口保留。
 
 ```bash
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:18088/panel
@@ -82,24 +68,4 @@ curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:18088/admin/users
 curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:18088/app/version
 ```
 
-预期依次为 410、410、200。旧入口在后端直接禁用，因此旧 ADMIN_SECRET 不能绕过，也不依赖某个域名的 Nginx 规则。
-新后台 `/admin-api/v1/*`、商户后台、App 的认证/成绩/会员/地图/统计/回调等业务接口保留。
-
-访问 Admin，点击侧边栏底部“修改密码”：输入原密码、新密码、再次确认。新密码为 12–72 字节且不能与原密码相同。
-成功后所有旧 Session 失效，重新登录；更新密码和撤销会话、审计日志在同一事务中执行。密码不写入日志。
-初始凭据文件只记载首次密码，改密后不会自动更新。已有管理员不能通过修改 ADMIN_BOOTSTRAP_* 重置。
-本次仅提供修改自己的密码，不包含修改邮箱或重置其他管理员密码。
-
-## 回退本次镜像更新
-
-如新版本异常，用先前记录的 release_stamp（不要重新生成时间戳）：
-
-```bash
-docker tag "zonenan-backend-new:rollback-$release_stamp" zonenan-backend-new:phase8
-docker tag "zonenan-admin:rollback-$release_stamp" zonenan-admin:phase8
-docker tag "zonenan-merchant:rollback-$release_stamp" zonenan-merchant:phase8
-docker compose -f /root/zonenan-backend-new/deploy/compose.server.yml up -d
-```
-
-随后执行上面的健康检查和代理重载。本次无新 migration，数据库和已修改密码保留。
-回退到旧镜像会恢复其旧接口行为，回退期间应注意旧后台重新可达。
+应为 410、410、200。Cloudflare Access 等边缘规则可能先返回登录跳转，直接本机检查可验证后端真实行为。

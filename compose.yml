@@ -1,0 +1,87 @@
+name: zonenan
+services:
+  db:
+    image: postgis/postgis:16-3.4-alpine@sha256:681931a625df344215e9b8998bf34daf146b6a395ceacee4439eb9c85869239f
+    container_name: zonenan-db
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        format: raw
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    networks: [database]
+  backend:
+    build: .
+    image: zonenan/backend:current
+    container_name: zonenan-backend-new
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        format: raw
+    depends_on:
+      db: {condition: service_healthy}
+    ports: ["127.0.0.1:18088:8080"]
+    volumes:
+      - uploads:/var/lib/zonenan/merchant-uploads
+      - map_tiles:/var/lib/zonenan/map-tiles
+    networks:
+      database: {}
+      edge:
+        aliases: [app, backend]
+  worker:
+    image: zonenan/backend:current
+    container_name: zonenan-worker-new
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        format: raw
+    entrypoint: /usr/local/bin/zonenan-worker
+    depends_on:
+      db: {condition: service_healthy}
+    networks: [database]
+  admin:
+    build: ../zonenan-admin
+    image: zonenan/admin:current
+    container_name: zonenan-admin
+    restart: unless-stopped
+    depends_on: [backend]
+    ports: ["127.0.0.1:13000:80"]
+    networks: [edge]
+  merchant:
+    build: ../zonenan-merchant
+    image: zonenan/merchant:current
+    container_name: zonenan-merchant
+    restart: unless-stopped
+    depends_on: [backend]
+    ports: ["127.0.0.1:13001:80"]
+    networks: [edge]
+  website:
+    image: nginx:alpine
+    container_name: zonenan-nginx
+    restart: unless-stopped
+    depends_on: [backend]
+    volumes:
+      - /root/zonenan-website:/usr/share/nginx/html:ro
+      - ./deploy/www.conf:/etc/nginx/conf.d/default.conf:ro
+    networks: [edge]
+networks:
+  database: {}
+  edge:
+    external: true
+    name: cloud-services_default
+volumes:
+  # Existing data is adopted in place. Names are storage IDs, not old services.
+  postgres:
+    external: true
+    name: zonenan-backend_db_data
+  uploads:
+    external: true
+    name: zonenan_v2_uploads
+  map_tiles:
+    external: true
+    name: zonenan-backend_map_tile_cache
