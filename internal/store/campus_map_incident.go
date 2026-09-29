@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -215,26 +214,14 @@ func (s *CampusMapIncidentStore) SetPolicyValue(ctx context.Context, key, value 
 }
 
 func (s *CampusMapIncidentStore) userEvidenceWeight(ctx context.Context, userID int64) (float64, bool, error) {
-	var concluded, disputed int
-	err := s.pool.QueryRow(ctx, `
-		WITH outcomes AS (
-			SELECT r.incident_id,
-			       COUNT(*) FILTER (WHERE v.value=1) positives,
-			       COUNT(*) FILTER (WHERE v.value=-1) negatives
-			  FROM campus_map_incident_reports r
-			  JOIN campus_map_incident_votes v ON v.incident_id=r.incident_id AND v.user_id<>r.user_id
-			 WHERE r.user_id=$1 AND r.withdrawn_at IS NULL
-			 GROUP BY r.incident_id
-		)
-		SELECT COUNT(*) FILTER (WHERE positives+negatives>=3),
-		       COUNT(*) FILTER (WHERE positives+negatives>=3 AND negatives>=3 AND negatives>=positives*2)
-		  FROM outcomes`, userID).Scan(&concluded, &disputed)
-	if err != nil {
-		return 1, false, err
-	}
-	ratio := float64(concluded-disputed+2) / float64(concluded+4)
-	weight := math.Max(0.5, math.Min(1.25, 0.5+ratio*0.75))
-	return weight, concluded >= 3 && ratio < 0.4, nil
+	// Community votes describe the current event, not the reporter's long-term
+	// trustworthiness. Absence reports have a stronger participation incentive
+	// than confirmations and an event may legitimately end between observations.
+	// Account sanctions therefore require an explicit administrative decision.
+	// Keep the stored weight fields at a neutral value for rolling compatibility.
+	_ = ctx
+	_ = userID
+	return 1, false, nil
 }
 
 func (s *CampusMapIncidentStore) Submit(ctx context.Context, userID int64, kind string, latitude, longitude float64) (CampusMapIncidentReport, error) {

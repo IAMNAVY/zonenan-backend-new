@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -82,7 +83,33 @@ func (s *Server) handleSubmitCampusMapIncident(w http.ResponseWriter, r *http.Re
 		Fail(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	// The dedup key guarantees that merged nearby reports never fan out a
+	// second notification for the same incident.
+	_, _ = s.push.Enqueue(
+		r.Context(),
+		"campus_incidents",
+		"校园突发事件",
+		incidentPushBody(request.Type),
+		fmt.Sprintf("campus-incident:%d", report.IncidentID),
+		map[string]any{"kind": "campus_incident", "incident_id": report.IncidentID, "type": request.Type},
+	)
+	s.pushDispatcher.Kick()
 	OK(w, report)
+}
+
+func incidentPushBody(kind string) string {
+	switch kind {
+	case "traffic_enforcement":
+		return "附近有新的交通执法提醒，点击查看地图"
+	case "road_closed":
+		return "附近有新的封路信息，点击查看地图"
+	case "congestion":
+		return "附近有新的拥堵信息，点击查看地图"
+	case "cat":
+		return "校园地图有新的小猫动态"
+	default:
+		return "校园地图有新的突发事件"
+	}
 }
 
 func (s *Server) handleVoteCampusMapIncident(w http.ResponseWriter, r *http.Request) {

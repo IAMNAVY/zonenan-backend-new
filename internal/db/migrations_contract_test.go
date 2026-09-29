@@ -45,6 +45,7 @@ func TestLegacyMigrationManifest(t *testing.T) {
 		"0049_opening_hours.sql",
 		"0050_rental_owner_fk.sql",
 		"0051_job_idempotency.sql",
+		"0052_push_notifications.sql",
 	}
 	sort.Strings(want)
 	if !reflect.DeepEqual(got, want) {

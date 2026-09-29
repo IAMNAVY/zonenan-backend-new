@@ -64,6 +64,7 @@ type Config struct {
 	MembershipBindingOffset    int64
 	MembershipBindingAlgorithm int
 	MembershipActivationPepper string
+	FCMServiceAccountJSON      string // Firebase service account JSON; optional, injected only at runtime.
 }
 
 // Load reads configuration from the environment and validates required fields.
@@ -105,6 +106,7 @@ func Load() (*Config, error) {
 		MembershipBindingOffset:    getenvInt64("MEMBERSHIP_BINDING_OFFSET", 10007),
 		MembershipBindingAlgorithm: getenvInt("MEMBERSHIP_BINDING_ALGORITHM", 1),
 		MembershipActivationPepper: os.Getenv("MEMBERSHIP_ACTIVATION_PEPPER"),
+		FCMServiceAccountJSON:      os.Getenv("FCM_SERVICE_ACCOUNT_JSON"),
 		// 默认 production:忘设 APP_ENV 时走 fail-closed 分支(密钥缺失即 fatal),
 		// 杜绝"直接跑二进制/换编排忘设环境→用公开硬编码密钥给所有人签令牌"的伪造风险。
 		// 本地开发须显式 APP_ENV=development 才启用不安全的开发默认密钥。

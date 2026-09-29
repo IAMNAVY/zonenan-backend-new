@@ -18,6 +18,7 @@ import (
 	"zonenan-backend/internal/mailer"
 	"zonenan-backend/internal/maptiles"
 	"zonenan-backend/internal/merchantauth"
+	"zonenan-backend/internal/pushnotify"
 	"zonenan-backend/internal/store"
 )
 
@@ -45,6 +46,8 @@ type Server struct {
 	campusMap          *store.CampusMapPlaceStore
 	campusMapContrib   *store.CampusMapContributionStore
 	campusMapIncidents *store.CampusMapIncidentStore
+	push               *store.PushNotificationStore
+	pushDispatcher     *pushnotify.Dispatcher
 	devices            *store.TrustedDeviceStore
 	challenges         *store.DeviceLoginChallengeStore
 	telemetry          *store.TelemetryStore
@@ -60,6 +63,7 @@ type Server struct {
 
 // New 组装 Server。
 func New(cfg *config.Config, pool *db.Pool) *Server {
+	pushStore := store.NewPushNotificationStore(pool)
 	return &Server{
 		cfg:                cfg,
 		pool:               pool,
@@ -83,6 +87,8 @@ func New(cfg *config.Config, pool *db.Pool) *Server {
 		campusMap:          store.NewCampusMapPlaceStore(pool),
 		campusMapContrib:   store.NewCampusMapContributionStore(pool),
 		campusMapIncidents: store.NewCampusMapIncidentStore(pool),
+		push:               pushStore,
+		pushDispatcher:     pushnotify.New(cfg.FCMServiceAccountJSON, pushStore),
 		devices:            store.NewTrustedDeviceStore(pool),
 		challenges:         store.NewDeviceLoginChallengeStore(pool),
 		telemetry:          store.NewTelemetryStore(pool),
@@ -196,6 +202,11 @@ func (s *Server) Router() http.Handler {
 	r.With(s.authMiddleware, mapIncidentWriteRL.middlewareByUser).Put("/campus-map/incidents/{incidentID}/vote", s.handleVoteCampusMapIncident)
 	r.With(s.authMiddleware).Get("/campus-map/incidents/mine", s.handleMyCampusMapIncidentReports)
 	r.With(s.authMiddleware, mapIncidentWriteRL.middlewareByUser).Delete("/campus-map/incidents/reports/{reportID}", s.handleWithdrawCampusMapIncidentReport)
+
+	// Authenticated device registration and per-device topic preferences.
+	r.With(s.authMiddleware).Put("/push/devices", s.handleRegisterPushDevice)
+	r.With(s.authMiddleware).Delete("/push/devices/{installationID}", s.handleDeletePushDevice)
+	r.With(s.authMiddleware).Get("/push/preferences", s.handlePushPreferences)
 
 	// 爱发电 Webhook 不使用 ZoneNaN JWT；依靠不可猜测的路径密钥和订单幂等。
 	r.With(afdianWebhookRL.middleware).Post("/webhooks/afdian/{secret}", s.handleAfdianWebhook)
@@ -398,6 +409,7 @@ func (s *Server) Router() http.Handler {
 			mount(http.MethodPost, "/campus-map/incidents/remove", "map.edit", s.handleAdminRemoveCampusMapIncident)
 			mount(http.MethodGet, "/campus-map/incidents/policy", "map.read", s.handleAdminCampusMapIncidentPolicy)
 			mount(http.MethodPost, "/campus-map/incidents/policy", "map.edit", s.handleAdminSetCampusMapIncidentPolicy)
+			mount(http.MethodPost, "/push/messages", "content.edit", s.handleAdminPushMessage)
 			mount(http.MethodGet, "/memberships/overview", "premium.read", s.handleAdminMembershipOverview)
 			mount(http.MethodGet, "/memberships/types", "premium.read", s.handleAdminMembershipTypes)
 			mount(http.MethodPost, "/memberships/types", "premium.manage", s.handleAdminSaveMembershipType)
