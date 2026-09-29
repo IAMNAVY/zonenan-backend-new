@@ -713,7 +713,7 @@ async function deleteRelease(id){if(!confirm('确认软删除该发布记录？'
 RENDER.settings=async()=>{
   const el=document.getElementById('p-settings');
   el.innerHTML='<h2 class="title">应用配置</h2><div class="card"><h3>功能与更新受众</h3><p class="muted">实验性功能关闭时客户端会隐藏入口并阻止调用；beta 名单按内部用户 ID 管理。</p><div class="formgrid" style="margin-top:8px">'+
-    ['update_release_state','grade','calendar_sync','permission_center','windows_reminder','membership_center','post_upgrade_guide'].map(k=>`<div><label>${k==='update_release_state'?'应用更新':k==='membership_center'?'会员中心':k==='post_upgrade_guide'?'本版亮点':k}<select id="aud_${k}"><option value="enabled">全部用户</option><option value="beta">beta 内测</option><option value="admin">仅管理员</option><option value="disabled">关闭</option></select></label></div>`).join('')+
+    ['update_release_state','grade','calendar_sync','permission_center','windows_reminder','membership_center','post_upgrade_guide','personalization_lab'].map(k=>`<div><label>${k==='update_release_state'?'应用更新':k==='membership_center'?'会员中心':k==='post_upgrade_guide'?'本版亮点':k==='personalization_lab'?'个性化实验室':k}<select id="aud_${k}"><option value="enabled">全部用户</option><option value="beta">beta 内测</option><option value="admin">仅管理员</option><option value="disabled">关闭</option></select></label></div>`).join('')+
     '</div><div class="row" style="margin-top:12px"><button onclick="saveAudienceSettings()">保存受众设置</button></div></div><div class="card"><table><thead><tr><th>Key</th><th>Value</th><th></th></tr></thead><tbody id="stt"></tbody></table><div class="card" style="margin-top:12px;display:flex;gap:8px;align-items:center"><input id="set_new_key" placeholder="新配置键,如 grade_enabled" style="flex:1"><input id="set_new_val" placeholder="值,如 false" style="flex:1"><button class="sm" onclick="addSetting()">新增</button></div><div class="muted" style="margin-top:10px">含版本(app_latest_version/app_apk_url/app_apk_sha256/app_force_update)、给分开关(grade_enabled=true/false)、验证码、风控阈值、免费额度等。</div></div>';
   try{
     const list=await api('GET','/admin/settings');
@@ -729,12 +729,12 @@ RENDER.settings=async()=>{
       <td><button class="sm" onclick="saveSetting('${esc(s.key)}')">保存</button></td></tr>`;
     }).join('');
     const settingValues=Object.fromEntries(list.map(s=>[s.key,s.value]));
-    const audienceKeys={update_release_state:'update_release_state',grade:'feature_grade_state',calendar_sync:'feature_calendar_sync_state',permission_center:'feature_permission_center_state',windows_reminder:'feature_windows_reminder_state',membership_center:'feature_membership_center_state',post_upgrade_guide:'feature_post_upgrade_guide_state'};
-    Object.entries(audienceKeys).forEach(([key,setting])=>{document.getElementById('aud_'+key).value=settingValues[setting]||(key==='membership_center'?'disabled':'enabled')});
+    const audienceKeys={update_release_state:'update_release_state',grade:'feature_grade_state',calendar_sync:'feature_calendar_sync_state',permission_center:'feature_permission_center_state',windows_reminder:'feature_windows_reminder_state',membership_center:'feature_membership_center_state',post_upgrade_guide:'feature_post_upgrade_guide_state',personalization_lab:'feature_personalization_lab_state'};
+    Object.entries(audienceKeys).forEach(([key,setting])=>{document.getElementById('aud_'+key).value=settingValues[setting]||(['membership_center','post_upgrade_guide','personalization_lab'].includes(key)?'disabled':'enabled')});
   }catch(e){document.getElementById('stt').innerHTML='<tr><td colspan=3 class="muted">'+esc(e.message)+'</td></tr>'}
 };
 async function saveAudienceSettings(){
-  const mapping={update_release_state:'update_release_state',grade:'feature_grade_state',calendar_sync:'feature_calendar_sync_state',permission_center:'feature_permission_center_state',windows_reminder:'feature_windows_reminder_state',membership_center:'feature_membership_center_state',post_upgrade_guide:'feature_post_upgrade_guide_state'};
+  const mapping={update_release_state:'update_release_state',grade:'feature_grade_state',calendar_sync:'feature_calendar_sync_state',permission_center:'feature_permission_center_state',windows_reminder:'feature_windows_reminder_state',membership_center:'feature_membership_center_state',post_upgrade_guide:'feature_post_upgrade_guide_state',personalization_lab:'feature_personalization_lab_state'};
   try{await Promise.all(Object.entries(mapping).map(([key,setting])=>api('POST','/admin/settings',{key:setting,value:document.getElementById('aud_'+key).value})));toast('受众设置已保存');RENDER.settings()}catch(e){toast(e.message,1)}
 }
 async function saveSetting(k){const v=document.getElementById('set_'+k).value;try{await api('POST','/admin/settings',{key:k,value:v});toast('已保存 '+k)}catch(e){toast(e.message,1)}}

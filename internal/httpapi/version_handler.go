@@ -9,12 +9,13 @@ import (
 )
 
 var appFeatureDefaults = map[string]string{
-	"grade":              "enabled",
-	"calendar_sync":      "disabled",
-	"permission_center":  "disabled",
-	"windows_reminder":   "disabled",
-	"membership_center":  "disabled",
-	"post_upgrade_guide": "disabled",
+	"grade":               "enabled",
+	"calendar_sync":       "disabled",
+	"permission_center":   "disabled",
+	"windows_reminder":    "disabled",
+	"membership_center":   "disabled",
+	"post_upgrade_guide":  "disabled",
+	"personalization_lab": "disabled",
 }
 
 func (s *Server) configuredFeatureState(r *http.Request, key string) string {
@@ -141,7 +142,7 @@ func buildAppVersionResponse(
 	}
 
 	features := map[string]map[string]interface{}{}
-	for _, key := range []string{"grade", "calendar_sync", "permission_center", "windows_reminder", "membership_center", "post_upgrade_guide"} {
+	for _, key := range []string{"grade", "calendar_sync", "permission_center", "windows_reminder", "membership_center", "post_upgrade_guide", "personalization_lab"} {
 		state := normalizeReleaseState(settings.GetStr(ctx, "feature_"+key+"_state", appFeatureDefaults[key]))
 		features[key] = map[string]interface{}{
 			"state": state, "experimental": key != "grade", "visible": viewer.CanSee(state),

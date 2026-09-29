@@ -203,3 +203,24 @@ func TestAppVersionPostUpgradeGuideDefaultsDisabledAndCanBeEnabled(t *testing.T)
 		t.Fatalf("enabled post_upgrade_guide = %#v, want enabled and visible", guide)
 	}
 }
+
+func TestAppVersionPersonalizationLabDefaultsDisabledAndCanBeEnabled(t *testing.T) {
+	settings := fakeVersionSettings{}
+	response := decodeVersionResponse(t, testVersionHandler(settings, &fakeVersionReleases{err: pgx.ErrNoRows}), "/app/version?platform=android")
+	features, ok := response["features"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("features = %#v", response["features"])
+	}
+	lab, ok := features["personalization_lab"].(map[string]interface{})
+	if !ok || lab["state"] != "disabled" || lab["visible"] != false || lab["experimental"] != true {
+		t.Fatalf("default personalization_lab = %#v, want disabled, experimental and hidden", features["personalization_lab"])
+	}
+
+	settings.strings = map[string]string{"feature_personalization_lab_state": "enabled"}
+	response = decodeVersionResponse(t, testVersionHandler(settings, &fakeVersionReleases{err: pgx.ErrNoRows}), "/app/version?platform=android")
+	features = response["features"].(map[string]interface{})
+	lab = features["personalization_lab"].(map[string]interface{})
+	if lab["state"] != "enabled" || lab["visible"] != true {
+		t.Fatalf("enabled personalization_lab = %#v, want enabled and visible", lab)
+	}
+}
