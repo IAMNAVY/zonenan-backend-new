@@ -207,6 +207,8 @@ func (s *Server) Router() http.Handler {
 	r.With(s.authMiddleware).Put("/push/devices", s.handleRegisterPushDevice)
 	r.With(s.authMiddleware).Delete("/push/devices/{installationID}", s.handleDeletePushDevice)
 	r.With(s.authMiddleware).Get("/push/preferences", s.handlePushPreferences)
+	r.Get("/push/poll", s.handlePollPushMessages)
+	r.Post("/push/poll/ack", s.handleAcknowledgePushMessages)
 
 	// 爱发电 Webhook 不使用 ZoneNaN JWT；依靠不可猜测的路径密钥和订单幂等。
 	r.With(afdianWebhookRL.middleware).Post("/webhooks/afdian/{secret}", s.handleAfdianWebhook)
@@ -410,6 +412,8 @@ func (s *Server) Router() http.Handler {
 			mount(http.MethodGet, "/campus-map/incidents/policy", "map.read", s.handleAdminCampusMapIncidentPolicy)
 			mount(http.MethodPost, "/campus-map/incidents/policy", "map.edit", s.handleAdminSetCampusMapIncidentPolicy)
 			mount(http.MethodPost, "/push/messages", "content.edit", s.handleAdminPushMessage)
+			mount(http.MethodGet, "/push/messages", "content.edit", s.handleAdminPushMessages)
+			mount(http.MethodDelete, "/push/messages/{messageID}", "content.edit", s.handleAdminDeletePushMessage)
 			mount(http.MethodGet, "/memberships/overview", "premium.read", s.handleAdminMembershipOverview)
 			mount(http.MethodGet, "/memberships/types", "premium.read", s.handleAdminMembershipTypes)
 			mount(http.MethodPost, "/memberships/types", "premium.manage", s.handleAdminSaveMembershipType)

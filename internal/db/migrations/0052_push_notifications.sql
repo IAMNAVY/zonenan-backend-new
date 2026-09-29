@@ -3,14 +3,17 @@ CREATE TABLE IF NOT EXISTS push_devices (
   user_id         BIGINT NOT NULL REFERENCES zonenan_users(id) ON DELETE CASCADE,
   installation_id TEXT NOT NULL,
   platform        TEXT NOT NULL CHECK (platform IN ('android', 'ios')),
-  provider        TEXT NOT NULL CHECK (provider IN ('fcm', 'apns')),
-  push_token      TEXT NOT NULL,
+  provider        TEXT NOT NULL CHECK (provider IN ('fcm', 'apns', 'poll')),
+  push_token      TEXT NOT NULL DEFAULT '',
+  poll_secret_hash TEXT NOT NULL DEFAULT '',
   app_version     TEXT NOT NULL DEFAULT '',
   enabled         BOOLEAN NOT NULL DEFAULT TRUE,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(user_id, installation_id, platform),
-  UNIQUE(provider, push_token)
+  UNIQUE(provider, push_token),
+  CHECK (provider = 'poll' OR push_token <> ''),
+  CHECK (provider <> 'poll' OR poll_secret_hash <> '')
 );
 
 CREATE TABLE IF NOT EXISTS push_subscriptions (
