@@ -11,19 +11,19 @@ import (
 func (s *Server) handleAdminPushMessages(w http.ResponseWriter, r *http.Request) {
 	messages, err := s.push.ListMessages(r.Context(), 100)
 	if err != nil {
-		v1Error(w, r, http.StatusInternalServerError, "PUSH_LIST_FAILED", "读取推送队列失败")
+		Fail(w, http.StatusInternalServerError, "读取推送队列失败")
 		return
 	}
-	v1Data(w, r, http.StatusOK, messages)
+	OK(w, messages)
 }
 
 func (s *Server) handleAdminDeletePushMessage(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "messageID"), 10, 64)
 	if err != nil || s.push.DeleteMessage(r.Context(), id) != nil {
-		v1Error(w, r, http.StatusBadRequest, "INVALID_PUSH_MESSAGE", "推送消息不存在")
+		Fail(w, http.StatusBadRequest, "推送消息不存在")
 		return
 	}
-	v1Data(w, r, http.StatusOK, map[string]bool{"deleted": true})
+	OK(w, map[string]bool{"deleted": true})
 }
 
 func (s *Server) handleRegisterPushDevice(w http.ResponseWriter, r *http.Request) {
@@ -102,9 +102,9 @@ func (s *Server) handleAdminPushMessage(w http.ResponseWriter, r *http.Request) 
 	}
 	id, err := s.push.Enqueue(r.Context(), request.Topic, request.Title, request.Body, "", request.Payload)
 	if err != nil {
-		v1Error(w, r, http.StatusBadRequest, "INVALID_PUSH_MESSAGE", err.Error())
+		Fail(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	s.pushDispatcher.Kick()
-	v1Data(w, r, http.StatusCreated, map[string]any{"id": id, "status": "queued"})
+	writeJSON(w, http.StatusCreated, Envelope{OK: true, Data: map[string]any{"id": id, "status": "queued"}})
 }
