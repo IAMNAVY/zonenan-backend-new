@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS push_devices (
   id              BIGSERIAL PRIMARY KEY,
-  user_id         BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  user_id         BIGINT NOT NULL REFERENCES zonenan_users(id) ON DELETE CASCADE,
   installation_id TEXT NOT NULL,
   platform        TEXT NOT NULL CHECK (platform IN ('android', 'ios')),
   provider        TEXT NOT NULL CHECK (provider IN ('fcm', 'apns')),
@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS push_messages (
   payload     JSONB NOT NULL DEFAULT '{}'::JSONB,
   dedup_key   TEXT UNIQUE,
   status      TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued', 'sending', 'sent', 'failed', 'cancelled')),
-  created_by  BIGINT REFERENCES admin_accounts(id) ON DELETE SET NULL,
+  created_by  BIGINT REFERENCES admin_users(id) ON DELETE SET NULL,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   sent_at     TIMESTAMPTZ
 );
