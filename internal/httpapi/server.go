@@ -307,8 +307,8 @@ func (s *Server) Router() http.Handler {
 	// 公开接口。
 	r.Get("/app/download-url", s.handleAppDownloadURL)
 
-	// New internal administration API: independent cookie session, CSRF, RBAC
-	// and audit. Legacy /admin remains available during the migration period.
+	// Internal administration API: independent cookie session, CSRF, RBAC and
+	// audit. The legacy /panel and /admin surfaces are permanently retired below.
 	r.Route("/admin-api/v1", func(r chi.Router) {
 		r.With(loginRL.middleware).Post("/auth/login", s.handleAdminV1Login)
 		r.Group(func(r chi.Router) {
