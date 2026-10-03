@@ -44,10 +44,13 @@ func TestCampusClaimIntegration(t *testing.T) {
 	cfg := &config.Config{JWTSigningKey: "synthetic-integration-key", JWTExpire: time.Hour, GradePepper: "synthetic-pepper", MapTileCacheDir: t.TempDir()}
 	s := New(cfg, pool)
 	router := s.Router()
+	requestNumber := 0
 	request := func(method, path, token string, body any, want int) map[string]any {
 		t.Helper()
 		payload, _ := json.Marshal(body)
 		r := httptest.NewRequest(method, path, bytes.NewReader(payload))
+		requestNumber++
+		r.RemoteAddr = fmt.Sprintf("192.0.2.%d:1234", requestNumber)
 		if token != "" {
 			r.Header.Set("Authorization", "Bearer "+token)
 		}
@@ -142,8 +145,32 @@ func TestCampusClaimIntegration(t *testing.T) {
 	second := request("POST", "/auth/campus-login", "", map[string]any{"student_id": student, "device_info": "test-device-b"}, 200)
 	secondToken := second["token"].(string)
 	secondProfile := request("GET", "/auth/me", secondToken, nil, 200)
-	if secondProfile["nickname"] == "private nickname" || secondProfile["role"] != "user" || secondProfile["campus_verified"] != false {
+	if secondProfile["nickname"] != "private nickname" || secondProfile["role"] != "user" || secondProfile["campus_verified"] != false {
 		t.Fatal("new device inherited private account state")
+	}
+	if _, exists := secondProfile["email"]; exists {
+		t.Fatal("restricted profile exposed email")
+	}
+	if _, exists := second["user"].(map[string]any)["email"]; exists {
+		t.Fatal("restricted login exposed email")
+	}
+	// Logout loses the account JWT, but a device credential restores the same account.
+	credential := full["device_credential"].(string)
+	legacyRelogin := request("POST", "/auth/campus-login", "", loginBody, 200)
+	if parsed, err := s.tokens.Parse(legacyRelogin["token"].(string)); err != nil || parsed != uid {
+		t.Fatal("existing server-side trust required an old session or email")
+	}
+	if legacyRelogin["device_credential"] == nil {
+		t.Fatal("legacy trusted device did not receive credential")
+	}
+	reloginBody := map[string]any{"student_id": student, "device_info": "test-device-a", "device_credential": credential}
+	relogin := request("POST", "/auth/campus-login", "", reloginBody, 200)
+	if parsed, err := s.tokens.Parse(relogin["token"].(string)); err != nil || parsed != uid {
+		t.Fatal("trusted relogin required email")
+	}
+	wrongDevice := request("POST", "/auth/campus-login", "", map[string]any{"student_id": student, "device_info": "test-device-c", "device_credential": credential}, 200)
+	if _, err := s.tokens.Parse(wrongDevice["token"].(string)); err == nil {
+		t.Fatal("credential used on another device")
 	}
 	request("GET", "/membership/me", secondToken, nil, 403)
 	request("GET", "/grade/auth-status", secondToken, nil, 403)
@@ -165,7 +192,7 @@ func TestCampusClaimIntegration(t *testing.T) {
 	if count != 1 {
 		t.Fatal("lifetime usage reset")
 	}
-	// The old CAS endpoint still validates tickets and logs into the same account.
+	// Old trusted clients retain their fast path; unknown devices still validate tickets.
 	schoolCalls := 0
 	school := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		schoolCalls++
@@ -177,8 +204,37 @@ func TestCampusClaimIntegration(t *testing.T) {
 	defer school.Close()
 	s.ids = ids.NewVerifierWithCASService(school.URL, "", "", "https://school.invalid/service")
 	legacy := request("POST", "/auth/cas-login", "", map[string]any{"student_id": student, "cas_ticket": "synthetic-ticket", "device_info": "test-device-a", "defer_device_email": true}, 200)
-	if parsed, err := s.tokens.Parse(legacy["token"].(string)); err != nil || parsed != uid || schoolCalls != 1 {
-		t.Fatal("legacy CAS compatibility or credential validation failed")
+	if parsed, err := s.tokens.Parse(legacy["token"].(string)); err != nil || parsed != uid || schoolCalls != 0 {
+		t.Fatal("legacy trusted-device fast path failed")
+	}
+	request("POST", "/auth/cas-login", "", map[string]any{"student_id": student, "cas_ticket": "synthetic-ticket", "device_info": "test-device-c", "defer_device_email": true}, 200)
+	if schoolCalls != 1 {
+		t.Fatal("unknown device skipped campus verification")
+	}
+	// Legacy trust rows upgrade with an existing full JWT; row IDs remain unchanged.
+	id, _ := s.devices.TrustID(ctx, hash, "test-device-a")
+	upgraded := request("POST", "/auth/campus-login", fullToken, loginBody, 200)
+	upgradedClaim, err := s.tokens.ParseTrustedDevice(upgraded["device_credential"].(string))
+	if err != nil || upgradedClaim.TrustID != id {
+		t.Fatal("legacy trust not inherited")
+	}
+	if err := s.devices.Revoke(ctx, hash, id); err != nil {
+		t.Fatal(err)
+	}
+	revoked := request("POST", "/auth/campus-login", "", reloginBody, 200)
+	if _, err := s.tokens.Parse(revoked["token"].(string)); err == nil {
+		t.Fatal("revoked device restored access")
+	}
+	revokedLegacy := request("POST", "/auth/campus-login", "", loginBody, 200)
+	if _, err := s.tokens.Parse(revokedLegacy["token"].(string)); err == nil {
+		t.Fatal("revoked legacy device restored access")
+	}
+	if err := s.devices.Trust(ctx, hash, "test-device-a", "synthetic device"); err != nil {
+		t.Fatal(err)
+	}
+	retrusted := request("POST", "/auth/campus-login", "", reloginBody, 200)
+	if _, err := s.tokens.Parse(retrusted["token"].(string)); err == nil {
+		t.Fatal("old credential revived after retrust")
 	}
 	// Old sessions stay restricted after another device verifies the account.
 	request("POST", "/grade/search", claimToken, map[string]any{}, 403)

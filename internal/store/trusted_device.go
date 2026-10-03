@@ -21,6 +21,13 @@ type TrustedDeviceStore struct{ pool *db.Pool }
 
 func NewTrustedDeviceStore(p *db.Pool) *TrustedDeviceStore { return &TrustedDeviceStore{pool: p} }
 
+// The row ID prevents a revoked credential from reviving after the device is trusted again.
+func (s *TrustedDeviceStore) TrustID(ctx context.Context, studentHash, deviceFP string) (int64, error) {
+	var id int64
+	err := s.pool.QueryRow(ctx, `SELECT COALESCE((SELECT id FROM trusted_devices WHERE student_hash=$1 AND device_fingerprint=$2),0)`, studentHash, deviceFP).Scan(&id)
+	return id, err
+}
+
 // Count 返回某学号 hash 已绑定的可信设备数。
 func (s *TrustedDeviceStore) Count(ctx context.Context, studentHash string) (int, error) {
 	var n int

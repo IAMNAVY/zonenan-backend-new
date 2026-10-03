@@ -193,7 +193,7 @@ func (s *Server) handleDeviceChallengeFinish(w http.ResponseWriter, r *http.Requ
 		s.writeChallengeError(w, err)
 		return
 	}
-	OK(w, authResp{Token: token, User: user, IsNew: false})
+	s.issueForDevice(w, r, user, challenge.StudentHash, challenge.TargetDeviceFingerprint, false, false, token)
 }
 
 func (s *Server) handleListPendingDeviceChallenges(w http.ResponseWriter, r *http.Request) {

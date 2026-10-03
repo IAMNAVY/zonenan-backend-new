@@ -19,10 +19,11 @@ const (
 )
 
 type authResp struct {
-	Token    string      `json:"token"`
-	User     interface{} `json:"user"`
-	IsNew    bool        `json:"is_new"`
-	Switched bool        `json:"switched,omitempty"`
+	DeviceCredential string      `json:"device_credential,omitempty"`
+	Token            string      `json:"token"`
+	User             interface{} `json:"user"`
+	IsNew            bool        `json:"is_new"`
+	Switched         bool        `json:"switched,omitempty"`
 }
 
 type webAuthResp struct {
@@ -407,8 +408,20 @@ func (s *Server) handleCasLogin(w http.ResponseWriter, r *http.Request) {
 
 	currentUID := userIDFrom(r)
 
-	// Legacy clients still upload a CAS/IDS credential, which must be verified
-	// even for a known fingerprint. Fingerprints are not authentication secrets.
+	// Preserve the legacy trusted-device fast path, including logged-out clients.
+	if currentUID == 0 {
+		claimedHash := auth.StudentHash(req.StudentID, s.cfg.GradePepper)
+		trusted, err := s.devices.IsTrusted(r.Context(), claimedHash, deviceFP)
+		if err != nil {
+			Fail(w, http.StatusInternalServerError, "可信设备校验失败")
+			return
+		}
+		if trusted {
+			s.finishCasLogin(w, r, claimedHash, req.Name, deviceFP, req.DeviceName, 0)
+			return
+		}
+	}
+
 	// 新客户端用 CAS service ticket 回验，旧客户端才走 IDS userProfile。
 	// 两条路径都由学校认证服务返回真实学号，绝不信任 req.StudentID。
 	var verifiedID string
@@ -471,11 +484,7 @@ func (s *Server) finishCasLogin(w http.ResponseWriter, r *http.Request, studentH
 	}
 
 	switched := currentUID > 0 && user.ID != currentUID
-	if isNew {
-		s.issueFor(w, user, true)
-	} else {
-		s.issueForSwitched(w, user, switched)
-	}
+	s.issueForDevice(w, r, user, studentHash, deviceFP, isNew, switched)
 }
 
 // campusEmail 由学号拼默认校园邮箱(不可伪造:发到此邮箱只有本人能收)。
@@ -566,7 +575,7 @@ func (s *Server) handleCasDeviceVerify(w http.ResponseWriter, r *http.Request) {
 		Fail(w, http.StatusInternalServerError, "可信设备保存失败")
 		return
 	}
-	s.issueFor(w, user, isNew)
+	s.issueForDevice(w, r, user, studentHash, deviceFP, isNew, false)
 }
 
 // maskFP 遮蔽设备指纹(日志用):只留前 6 位,不打完整标识。

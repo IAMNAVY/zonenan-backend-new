@@ -11,15 +11,20 @@ import (
 var campusStudentIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,32}$`)
 
 type campusLoginReq struct {
-	StudentID  string `json:"student_id"`
-	DeviceInfo string `json:"device_info"`
-	DeviceName string `json:"device_name"`
+	StudentID        string `json:"student_id"`
+	DeviceInfo       string `json:"device_info"`
+	DeviceName       string `json:"device_name"`
+	DeviceCredential string `json:"device_credential"`
 }
 
-// The response is deliberately independent of stored profile, roles, memberships
-// and recovery methods, even when the claimed student already has an account.
-func campusClaimUser(uid int64) map[string]interface{} {
-	return map[string]interface{}{"id": uid, "nickname": "中南同学", "has_campus": true, "campus_verified": false, "role": "user"}
+// Nicknames are public display data. Email, roles, memberships and recovery
+// methods remain unavailable to restricted sessions.
+func campusClaimUser(uid int64, nickname ...string) map[string]interface{} {
+	name := "中南同学"
+	if len(nickname) > 0 && strings.TrimSpace(nickname[0]) != "" {
+		name = nickname[0]
+	}
+	return map[string]interface{}{"id": uid, "nickname": name, "has_campus": true, "campus_verified": false, "role": "user"}
 }
 
 func (s *Server) handleCampusLogin(w http.ResponseWriter, r *http.Request) {
@@ -43,10 +48,18 @@ func (s *Server) handleCampusLogin(w http.ResponseWriter, r *http.Request) {
 		Fail(w, http.StatusInternalServerError, "校园账号连接失败")
 		return
 	}
-	// Only possession of an existing valid ZoneNaN credential can resume full
-	// access. A known device fingerprint, name, or school login is not proof.
+	trustID, err := s.devices.TrustID(r.Context(), hash, req.DeviceInfo)
+	if err != nil {
+		Fail(w, http.StatusInternalServerError, "可信设备校验失败")
+		return
+	}
+	if trustedCampusDeviceAllowed(s.tokens, user.ID, req.DeviceInfo, trustID, req.DeviceCredential) && !user.IsBanned {
+		s.issueForDevice(w, r, user, hash, req.DeviceInfo, false, false)
+		return
+	}
+	// Existing account credentials can upgrade legacy trust rows without email.
 	if userIDFrom(r) == user.ID && !user.IsBanned {
-		s.issueFor(w, user, false)
+		s.issueForDevice(w, r, user, hash, req.DeviceInfo, false, false)
 		return
 	}
 	token, err := s.tokens.IssueCampusClaim(user.ID, req.DeviceInfo)
@@ -54,7 +67,47 @@ func (s *Server) handleCampusLogin(w http.ResponseWriter, r *http.Request) {
 		Fail(w, http.StatusInternalServerError, "令牌签发失败")
 		return
 	}
-	OK(w, authResp{Token: token, User: campusClaimUser(user.ID)})
+	OK(w, authResp{Token: token, User: campusClaimUser(user.ID, user.Nickname)})
+}
+
+func trustedCampusDeviceAllowed(tokens *auth.TokenManager, uid int64, device string, trustID int64, credential string) bool {
+	if trustID <= 0 || device == "" {
+		return false
+	}
+	// Logout and upgrades do not revoke server-side legacy fingerprint trust.
+	if credential == "" {
+		return true
+	}
+	claim, err := tokens.ParseTrustedDevice(credential)
+	return err == nil && claim.UserID == uid && claim.Device == device && claim.TrustID == trustID
+}
+
+func (s *Server) issueForDevice(w http.ResponseWriter, r *http.Request, user *store.User, hash, device string, isNew, switched bool, preparedToken ...string) {
+	var token string
+	var err error
+	if len(preparedToken) > 0 {
+		token = preparedToken[0]
+	} else {
+		token, err = s.tokens.Issue(user.ID)
+	}
+	if err != nil {
+		Fail(w, http.StatusInternalServerError, "令牌签发失败")
+		return
+	}
+	id, err := s.devices.TrustID(r.Context(), hash, device)
+	if err != nil {
+		Fail(w, http.StatusInternalServerError, "可信设备校验失败")
+		return
+	}
+	credential := ""
+	if id > 0 {
+		credential, err = s.tokens.IssueTrustedDevice(user.ID, device, id)
+		if err != nil {
+			Fail(w, http.StatusInternalServerError, "设备凭据签发失败")
+			return
+		}
+	}
+	OK(w, authResp{Token: token, User: user, IsNew: isNew, Switched: switched, DeviceCredential: credential})
 }
 
 func (s *Server) campusClaimFrom(w http.ResponseWriter, r *http.Request) (*auth.CampusClaim, bool) {
@@ -110,7 +163,12 @@ func (s *Server) campusMeHandler() http.HandlerFunc {
 					Fail(w, http.StatusUnauthorized, "账号不存在，请重新登录")
 					return
 				}
-				OK(w, campusClaimUser(claim.UserID))
+				user, err := s.users.GetByID(r.Context(), claim.UserID)
+				if err != nil {
+					Fail(w, http.StatusInternalServerError, "读取账号失败")
+					return
+				}
+				OK(w, campusClaimUser(claim.UserID, user.Nickname))
 				return
 			}
 		}
