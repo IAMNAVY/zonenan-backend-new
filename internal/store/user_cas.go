@@ -23,6 +23,10 @@ func (s *UserStore) BindOrLoginCAS(ctx context.Context, studentHash, displayName
 	switch {
 	case err == nil:
 		// 已存在 cas 身份 → 登入该账号。
+		// A verified legacy CAS login may promote a new-client reservation.
+		if _, err := s.pool.Exec(ctx, `UPDATE zonenan_identities SET verified=TRUE WHERE provider='cas' AND provider_uid=$1`, studentHash); err != nil {
+			return nil, false, err
+		}
 		u, gerr := s.GetByID(ctx, existingUserID)
 		return u, false, gerr
 	case !errors.Is(err, pgx.ErrNoRows):

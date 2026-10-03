@@ -346,9 +346,7 @@ func (s *Server) handleWebLogout(w http.ResponseWriter, r *http.Request) {
 type casLoginReq struct {
 	StudentID string `json:"student_id"`
 	Name      string `json:"name"`
-	// IdsToken:App 侧 IDS/CAS 登录令牌。要求非空(抬高门槛:至少真登录过学校)。
-	// 注:因服务器在公网、反复回验学校接口会被封 IP,这里不做服务端回验,
-	// 而以 TOFU 锁设备 + 换设备邮箱验证 + 风控 作为缓解(见下)。
+	// IdsToken:旧客户端 IDS 登录令牌，必须经学校回验；仅为兼容保留。
 	IdsToken string `json:"ids_token"`
 	// CASTicket:当前 CAS 流程针对固定 service 申请的一次性票据。
 	// 新客户端优先使用它，避免依赖已下线的 IDS mobile_code 换票链。
@@ -409,21 +407,8 @@ func (s *Server) handleCasLogin(w http.ResponseWriter, r *http.Request) {
 
 	currentUID := userIDFrom(r)
 
-	// S1:先用客户端上报的学号算 hash,仅用于探测"是不是这台设备之前已登录过的老用户"。
-	// 关键安全点:攻击者用他人学号 + 自己的新设备指纹,绝不可能命中他人的可信设备
-	//(设备指纹是攻击者自己的),因此下面的 TOFU 命中分支只会对"本设备+本学号"成立。
-	claimedHash := auth.StudentHash(req.StudentID, s.cfg.GradePepper)
-
-	// 快路径:无当前登录 + 该(学号,设备)已是可信组合 → 老用户老设备回访,
-	// 无需回验、不打学校接口(省流量、避免风控)。此时信任 claimedHash 是安全的:
-	// 这台设备当初被 Trust 时,学号已经过 IDS 回验(见慢路径),伪造者无法复现。
-	if currentUID == 0 && deviceFP != "" {
-		if trusted, _ := s.devices.IsTrusted(r.Context(), claimedHash, deviceFP); trusted {
-			s.finishCasLogin(w, r, claimedHash, req.Name, deviceFP, req.DeviceName, 0)
-			return
-		}
-	}
-
+	// Legacy clients still upload a CAS/IDS credential, which must be verified
+	// even for a known fingerprint. Fingerprints are not authentication secrets.
 	// 新客户端用 CAS service ticket 回验，旧客户端才走 IDS userProfile。
 	// 两条路径都由学校认证服务返回真实学号，绝不信任 req.StudentID。
 	var verifiedID string

@@ -245,6 +245,10 @@ func (s *Server) Router() http.Handler {
 		// 客户端在登录/进前台/补绑定时会自动幂等调用,走 loginRL(10/分钟);
 		// 不能挂 registerRL(5/小时),正常 App 流程一小时内就会撞 429。
 		r.With(loginRL.middleware, s.optionalAuthMiddleware).Post("/cas-login", s.handleCasLogin)
+		// New clients never upload school credentials. Claim sessions cannot access account APIs.
+		r.With(loginRL.middleware, s.optionalAuthMiddleware).Post("/campus-login", s.handleCampusLogin)
+		r.With(challengeActionRL.middleware).Post("/campus-verify", s.handleCampusVerify)
+		r.Get("/me", s.campusMeHandler())
 		// Legacy email verification remains available for older clients.
 		r.With(loginRL.middleware).Post("/cas-device-verify", s.handleCasDeviceVerify)
 		// Challenge credentials are required on every unauthenticated new-device action.
@@ -257,7 +261,6 @@ func (s *Server) Router() http.Handler {
 		r.With(loginRL.middleware).Post("/passkey/login-finish", s.handlePasskeyLoginFinish)
 		r.Group(func(r chi.Router) {
 			r.Use(s.authMiddleware)
-			r.Get("/me", s.handleMe)
 			r.Post("/profile", s.handleUpdateProfile)
 			r.Post("/logout", s.handleLogout)
 			r.Post("/bind-email", s.handleBindEmail)

@@ -29,6 +29,10 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 		}
 		uid, sessionID, err := s.tokens.ParseSession(strings.TrimPrefix(h, "Bearer "))
 		if err != nil {
+			if _, claimErr := s.tokens.ParseCampusClaim(strings.TrimPrefix(h, "Bearer ")); claimErr == nil {
+				Fail(w, http.StatusForbidden, "请先验证校园邮箱后使用此功能")
+				return
+			}
 			Fail(w, http.StatusUnauthorized, "登录已过期，请重新登录")
 			return
 		}
@@ -93,7 +97,7 @@ func (s *Server) optionalAuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := r.Header.Get("Authorization")
 		if strings.HasPrefix(h, "Bearer ") {
-			if uid, err := s.tokens.Parse(strings.TrimPrefix(h, "Bearer ")); err == nil {
+			if uid, sid, err := s.tokens.ParseSession(strings.TrimPrefix(h, "Bearer ")); err == nil && (sid == "" || s.webSessions.Active(r.Context(), sid, uid)) {
 				if s.users.CheckStatus(r.Context(), uid) == store.UserOK {
 					if err := s.users.TouchLastOnline(r.Context(), uid); err != nil {
 						log.Printf("touch user last online failed uid=%d: %v", uid, err)

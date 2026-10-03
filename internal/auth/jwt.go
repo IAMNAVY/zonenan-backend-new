@@ -1,11 +1,47 @@
 package auth
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
 	"fmt"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 )
+
+// CampusClaim is a restricted session, never an account authentication token.
+type CampusClaim struct {
+	UserID  int64  `json:"uid"`
+	Device  string `json:"device"`
+	Purpose string `json:"purpose"`
+	jwt.RegisteredClaims
+}
+
+func (m *TokenManager) campusKey() []byte {
+	mac := hmac.New(sha256.New, m.key)
+	mac.Write([]byte("zonenan/campus-claim/v1"))
+	return mac.Sum(nil)
+}
+
+// A separate key also makes legacy servers reject restricted tokens.
+func (m *TokenManager) IssueCampusClaim(userID int64, device string) (string, error) {
+	now := time.Now()
+	claims := CampusClaim{UserID: userID, Device: device, Purpose: "campus_claim",
+		RegisteredClaims: jwt.RegisteredClaims{IssuedAt: jwt.NewNumericDate(now), ExpiresAt: jwt.NewNumericDate(now.Add(m.expire))}}
+	return jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(m.campusKey())
+}
+
+func (m *TokenManager) ParseCampusClaim(token string) (*CampusClaim, error) {
+	claims := &CampusClaim{}
+	tok, err := jwt.ParseWithClaims(token, claims, func(t *jwt.Token) (interface{}, error) { return m.campusKey(), nil }, jwt.WithValidMethods([]string{"HS256"}), jwt.WithExpirationRequired())
+	if err != nil {
+		return nil, err
+	}
+	if !tok.Valid || claims.UserID <= 0 || claims.Device == "" || claims.Purpose != "campus_claim" {
+		return nil, fmt.Errorf("invalid campus claim")
+	}
+	return claims, nil
+}
 
 // Claims 是 Zonenan 会话令牌载荷。只放 user_id;学号 hash 不进 token(客户端不该持有)。
 type Claims struct {

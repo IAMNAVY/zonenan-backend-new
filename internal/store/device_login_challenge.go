@@ -296,6 +296,9 @@ func (s *DeviceLoginChallengeStore) ConsumeAndTrust(ctx context.Context, challen
 	if err := stateError(c, ChallengeApproved, time.Now()); err != nil {
 		return nil, err
 	}
+	if _, err := tx.Exec(ctx, `UPDATE zonenan_identities SET verified=TRUE WHERE provider='cas' AND provider_uid=$1`, c.StudentHash); err != nil {
+		return nil, err
+	}
 	if _, err := tx.Exec(ctx,
 		`INSERT INTO trusted_devices(student_hash, device_fingerprint, device_name)
 		 VALUES ($1,$2,$3)
